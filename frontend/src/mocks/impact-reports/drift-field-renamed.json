@@ -3,16 +3,25 @@
   "change_type": "field_renamed",
   "endpoint": "/items/{id}",
   "method": "GET",
-  "summary_plain_english": "The API field 'full_name' was renamed to 'name' on the GET /items/{id} endpoint. Two frontend files are affected: the auto-generated TypeScript types file (types.gen.ts) declares 'full_name' in both UserCreate and UserPublic interfaces, and the Admin table column component (columns.tsx) uses 'full_name' as a table accessor key and reads it directly to render the user's name \u2014 both will silently break after the rename.",
+  "summary_plain_english": "The field 'full_name' is used in 9 files across the frontend: the auto-generated API client types (types.gen.ts), the sign-up and user-settings route forms, the sidebar user display component, three admin components (columns, EditUser, AddUser), and three Playwright test/utility files. Every one of these will break when the API renames this field to 'name', because they all read, validate, render, or submit the field by its old name.",
   "severity": "high",
   "affected_files": [
     "frontend/src/client/types.gen.ts",
-    "frontend/src/components/Admin/columns.tsx"
+    "frontend/src/routes/signup.tsx",
+    "frontend/src/routes/_layout/index.tsx",
+    "frontend/src/components/UserSettings/UserInformation.tsx",
+    "frontend/src/components/Sidebar/User.tsx",
+    "frontend/src/components/Admin/columns.tsx",
+    "frontend/src/components/Admin/EditUser.tsx",
+    "frontend/src/components/Admin/AddUser.tsx",
+    "frontend/tests/utils/privateApi.ts",
+    "frontend/tests/user-settings.spec.ts",
+    "frontend/tests/sign-up.spec.ts"
   ],
   "patch_applied": true,
-  "patch_description": "Renamed field 'full_name' to 'name' in 4 places: the UserCreate and UserPublic TypeScript type definitions in types.gen.ts (lines 208 and 234), and the TanStack Table column accessorKey and cell row accessor in columns.tsx (lines 14 and 17), aligning the frontend with the breaking API rename on GET /items/{id}.",
+  "patch_description": "Renamed all frontend occurrences of the API field 'full_name' to 'name' across 11 files: the auto-generated TypeScript types (6 type definitions), the signup and user-settings route forms, the dashboard greeting, the sidebar user display component, the three admin components (columns, EditUser, AddUser), and three Playwright test/utility files.",
   "verify_status": "pass",
-  "verify_log": "tsc --noEmit completed with 0 errors and no output. No vitest/jest unit tests configured (package.json test script uses Playwright only, which was not run).",
+  "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: vite v8.3.1 production bundle compiled cleanly in 3.84s, 2364 modules transformed.",
   "old_schema_fragment": {
     "full_name": "string"
   },
