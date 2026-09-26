@@ -35,7 +35,7 @@ const verifyStyles: Record<ImpactReport["verify_status"], string> = {
 
 function ImpactReportCard({ report }: { report: ImpactReport }) {
   return (
-    <Card className="border-l-4 border-l-emerald-500 bg-emerald-950/[0.015]">
+    <Card className="border-l-4 border-l-emerald-500 bg-emerald-950/1.5">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-4">
           <p className="text-lg font-semibold leading-snug">
