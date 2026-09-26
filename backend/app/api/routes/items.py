@@ -96,18 +96,5 @@ def update_item(
     return item
 
 
-@router.delete("/{id}")
-def delete_item(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
-) -> Message:
-    """
-    Delete an item.
-    """
-    item = session.get(Item, id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    session.delete(item)
-    session.commit()
-    return Message(message="Item deleted successfully")
+# --- DRIFT (Branch C): DELETE /items/{id} removed entirely ---
+# (delete_item route deleted — was here in the original file)
