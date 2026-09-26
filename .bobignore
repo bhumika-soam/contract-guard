@@ -1,0 +1,53 @@
+# === Secrets & credentials ===
+.env
+.env.*
+*.pem
+*.key
+*secret*
+*credential*
+*apikey*
+config/secrets.json
+backend/app/core/config.py.bak
+
+# === Bob's own temp/session files ===
+_current_prompt*.md
+_current_prompt_*_*.md
+.bob/
+
+# === Dependencies ===
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# === Build artifacts ===
+dist/
+build/
+frontend/dist/
+frontend/build/
+.next/
+
+# === Version control / IDE ===
+.git/
+.vscode/
+.idea/
+
+# === Logs ===
+*.log
+logs/
+
+# === Large / binary / media ===
+*.zip
+*.tar.gz
+*.mp4
+*.mov
+*.png
+*.jpg
+*.jpeg
+
+# === Ground-truth snapshots (don't let Bob "fix" these) ===
+backend/openapi_snapshots/
+
+# === Generated reports (Bob should write these, not "clean up" them) ===
+!backend/contractguard/reports/*.json

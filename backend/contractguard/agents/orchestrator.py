@@ -340,7 +340,6 @@ def run_orchestrator(
     # Route directly to the matching frontend mock file based on change_type
     output_map = {
         "field_renamed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-field-renamed.json",
-        "field_type_changed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-type-changed.json",
         "type_changed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-type-changed.json",
         "endpoint_removed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-endpoint-removed.json",
     }
