@@ -62,7 +62,7 @@ function ImpactReportCard({ report }: { report: ImpactReport }) {
 
         <div>
           <p className="text-sm font-semibold mb-1">
-            {report.patch_applied ? "✅ Patch applied" : "❌ Patch not applied"}
+            {report.patch_applied ? "✓ Patch applied" : "✘ Patch not applied"}
           </p>
           <p className="text-sm text-muted-foreground">
             {report.patch_description}
