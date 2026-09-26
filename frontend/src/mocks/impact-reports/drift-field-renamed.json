@@ -1,32 +1,41 @@
 {
-  "change_id": "field_renamed_full_name",
+  "change_id": "field_renamed_api_v1_items",
   "change_type": "field_renamed",
-  "endpoint": "/items/{id}",
-  "method": "GET",
-  "summary_plain_english": "The field 'full_name' is used in 9 files across the frontend: the auto-generated API client types (types.gen.ts), the sign-up and user-settings route forms, the sidebar user display component, three admin components (columns, EditUser, AddUser), and three Playwright test/utility files. Every one of these will break when the API renames this field to 'name', because they all read, validate, render, or submit the field by its old name.",
+  "endpoint": "/api/v1/items/",
+  "method": "POST",
+  "summary_plain_english": "The 'title' field was renamed to 'name' on /api/v1/items/ across 20 files. Any frontend code reading .title will now get undefined.",
   "severity": "high",
   "affected_files": [
     "frontend/src/client/types.gen.ts",
-    "frontend/src/routes/signup.tsx",
+    "frontend/src/components/Items/AddItem.tsx",
+    "frontend/src/components/Items/EditItem.tsx",
+    "frontend/src/components/Items/columns.tsx",
+    "frontend/src/components/Sidebar/AppSidebar.tsx",
+    "frontend/src/components/Sidebar/Main.tsx",
+    "frontend/src/components/ui/alert.tsx",
+    "frontend/src/components/ui/card.tsx",
+    "frontend/src/components/ui/dialog.tsx",
+    "frontend/src/components/ui/sheet.tsx",
+    "frontend/src/components/ui/sidebar.tsx",
+    "frontend/src/routes/_layout/admin.tsx",
     "frontend/src/routes/_layout/index.tsx",
-    "frontend/src/components/UserSettings/UserInformation.tsx",
-    "frontend/src/components/Sidebar/User.tsx",
-    "frontend/src/components/Admin/columns.tsx",
-    "frontend/src/components/Admin/EditUser.tsx",
-    "frontend/src/components/Admin/AddUser.tsx",
-    "frontend/tests/utils/privateApi.ts",
-    "frontend/tests/user-settings.spec.ts",
-    "frontend/tests/sign-up.spec.ts"
+    "frontend/src/routes/_layout/items.tsx",
+    "frontend/src/routes/_layout/settings.tsx",
+    "frontend/src/routes/impact-report.tsx",
+    "frontend/src/routes/login.tsx",
+    "frontend/src/routes/recover-password.tsx",
+    "frontend/src/routes/reset-password.tsx",
+    "frontend/src/routes/signup.tsx"
   ],
   "patch_applied": true,
-  "patch_description": "Renamed all frontend occurrences of the API field 'full_name' to 'name' across 11 files: the auto-generated TypeScript types (6 type definitions), the signup and user-settings route forms, the dashboard greeting, the sidebar user display component, the three admin components (columns, EditUser, AddUser), and three Playwright test/utility files.",
+  "patch_description": "Updated 20 affected files to use 'name' instead of 'title'.",
   "verify_status": "pass",
-  "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: vite v8.3.1 production bundle compiled cleanly in 3.84s, 2364 modules transformed.",
+  "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: production bundle compiled cleanly in 1.04s.",
   "old_schema_fragment": {
-    "full_name": "string"
+    "title": "string"
   },
   "new_schema_fragment": {
     "name": "string"
   },
-  "detected_at": "2026-09-26T13:00:00Z"
+  "detected_at": "2026-09-26T16:59:46.473594+00:00"
 }

@@ -17,7 +17,7 @@ REPO_ROOT = BASE_DIR.parent.parent
 # Automatically load BOB_API_KEY (and other variables) from the root .env file
 ENV_FILE = REPO_ROOT / ".env"
 if ENV_FILE.exists():
-    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+    for line in ENV_FILE.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
@@ -32,7 +32,10 @@ DEFAULT_OUTPUT_FILE = AGENTS_DIR / "impact_report.json"
 MAX_RETRIES = 3
 MAX_PARALLEL_SUBAGENTS = 4  # Bounds concurrent Bob CLI processes
 
-
+def make_change_id(diff_entry: dict) -> str:
+    endpoint_slug = diff_entry["endpoint"].strip("/").replace("/", "_").replace("{", "").replace("}", "")
+    return f"{diff_entry['change_type']}_{endpoint_slug}"
+    
 def run_bob(prompt: str, mode: str, task_label: str = "main") -> str:
     """Thread-safe Bob CLI runner using a unique prompt file per subagent call."""
     bob_path = shutil.which("bob")
@@ -105,10 +108,10 @@ def find_candidate_frontend_files(old_field: str, endpoint: str) -> list[str]:
             continue
         # Skip mock impact reports so the agent doesn't scan its own output files
         rel_posix = file_path.relative_to(REPO_ROOT).as_posix()
-        if "mocks/impact_reports" in rel_posix:
+        if "mocks/impact-reports" in rel_posix:
             continue
         try:
-            content = file_path.read_text(encoding="utf-8")
+            content = file_path.read_text(encoding="utf-8-sig")
             if search_token and search_token in content:
                 candidates.append(rel_posix)
         except OSError:
@@ -148,7 +151,7 @@ def run_parallel_impact_agents(
     with an automatic fallback to the single bulk Impact Agent if needed.
     Returns (affected_files, summary_plain_english, combined_impact_output).
     """
-    impact_base_prompt = IMPACT_PROMPT_FILE.read_text(encoding="utf-8")
+    impact_base_prompt = IMPACT_PROMPT_FILE.read_text(encoding="utf-8-sig")
     endpoint = str(diff_data.get("endpoint", ""))
     candidates = find_candidate_frontend_files(old_field, endpoint)
 
@@ -229,7 +232,7 @@ def run_orchestrator(
         if not diff_path.exists():
             print(f"❌ Missing diff report file: {diff_path}")
             sys.exit(1)
-        raw_data = json.loads(diff_path.read_text(encoding="utf-8"))
+        raw_data = json.loads(diff_path.read_text(encoding="utf-8-sig"))
 
     if isinstance(raw_data, list):
         raw_data = raw_data[0] if raw_data else {}
@@ -238,7 +241,11 @@ def run_orchestrator(
 
     old_field = next(iter(diff_data.get("old_schema_fragment", {})), "unknown")
     new_field = next(iter(diff_data.get("new_schema_fragment", {})), "unknown")
-    change_id = diff_data.get("change_id", f"{diff_data.get('change_type', 'change')}_{old_field}")
+    # Prefer an explicit change_id if one was ever supplied, otherwise derive a
+    # unique one from endpoint + change_type (not old_field, since all 3 of
+    # Mahi's real diff entries per branch share the same change_type/old_field
+    # but hit different endpoints).
+    change_id = diff_data.get("change_id") or make_change_id(diff_data)
 
     # 1. Run Parallel Impact Subagents (Ask mode)
     affected_files, summary_plain_english, impact_output = run_parallel_impact_agents(
@@ -254,8 +261,8 @@ def run_orchestrator(
     findings_file.write_text(impact_output, encoding="utf-8")
 
     # 2 & 3. Run Repair Agent + Verify Agent Loop (max 3 attempts)
-    repair_base_prompt = REPAIR_PROMPT_FILE.read_text(encoding="utf-8")
-    verify_base_prompt = VERIFY_PROMPT_FILE.read_text(encoding="utf-8")
+    repair_base_prompt = REPAIR_PROMPT_FILE.read_text(encoding="utf-8-sig")
+    verify_base_prompt = VERIFY_PROMPT_FILE.read_text(encoding="utf-8-sig")
 
     verify_status = "fail"
     verify_log = "Verification did not run."
@@ -340,6 +347,7 @@ def run_orchestrator(
     # Route directly to the matching frontend mock file based on change_type
     output_map = {
         "field_renamed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-field-renamed.json",
+        "field_type_changed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-type-changed.json",
         "type_changed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-type-changed.json",
         "endpoint_removed": REPO_ROOT / "frontend/src/mocks/impact-reports/drift-endpoint-removed.json",
     }

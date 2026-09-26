@@ -1,0 +1,14 @@
+﻿[
+  {
+    "endpoint": "/api/v1/items/{id}",
+    "method": "DELETE",
+    "change_type": "endpoint_removed",
+    "breaking": true,
+    "old_schema_fragment": {
+      "message": "string"
+    },
+    "new_schema_fragment": {},
+    "severity": "high",
+    "detected_at": "2026-09-26T17:00:02.339502+00:00"
+  }
+]
