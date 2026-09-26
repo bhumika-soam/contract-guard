@@ -71,8 +71,9 @@ class UsersPublic(SQLModel):
 
 
 # Shared properties
+# --- DRIFT (Branch A): `title` renamed to `name` ---
 class ItemBase(SQLModel):
-    title: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=255)  # was: title
     description: str | None = Field(default=None, max_length=255)
 
 
@@ -83,7 +84,7 @@ class ItemCreate(ItemBase):
 
 # Properties to receive on item update
 class ItemUpdate(SQLModel):
-    title: str | None = Field(default=None, min_length=1, max_length=255)
+    name: str | None = Field(default=None, min_length=1, max_length=255)  # was: title
     description: str | None = Field(default=None, max_length=255)
 
 
