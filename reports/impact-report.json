@@ -1,0 +1,23 @@
+{
+  "change_id": "field_renamed_full_name",
+  "change_type": "field_renamed",
+  "endpoint": "/items/{id}",
+  "method": "GET",
+  "summary_plain_english": "The API field 'full_name' was renamed to 'name' on the GET /items/{id} endpoint. Two frontend files are affected: the auto-generated TypeScript types file (types.gen.ts) declares 'full_name' in both UserCreate and UserPublic interfaces, and the Admin table column component (columns.tsx) uses 'full_name' as a table accessor key and reads it directly to render the user's name \u2014 both will silently break after the rename.",
+  "severity": "high",
+  "affected_files": [
+    "frontend/src/client/types.gen.ts",
+    "frontend/src/components/Admin/columns.tsx"
+  ],
+  "patch_applied": true,
+  "patch_description": "Renamed field 'full_name' to 'name' in 4 places: the UserCreate and UserPublic TypeScript type definitions in types.gen.ts (lines 208 and 234), and the TanStack Table column accessorKey and cell row accessor in columns.tsx (lines 14 and 17), aligning the frontend with the breaking API rename on GET /items/{id}.",
+  "verify_status": "pass",
+  "verify_log": "tsc --noEmit completed with 0 errors and no output. No vitest/jest unit tests configured (package.json test script uses Playwright only, which was not run).",
+  "old_schema_fragment": {
+    "full_name": "string"
+  },
+  "new_schema_fragment": {
+    "name": "string"
+  },
+  "detected_at": "2026-09-26T13:00:00Z"
+}
