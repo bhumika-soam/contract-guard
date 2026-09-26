@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from pydantic import EmailStr
-from sqlalchemy import DateTime
+from sqlalchemy import Column, DateTime, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -71,9 +71,16 @@ class UsersPublic(SQLModel):
 
 
 # Shared properties
+# --- DRIFT (Branch B): `description` type changed from str to list[str] ---
+# NOTE: list[str] has no default SQLAlchemy column mapping, so the table
+# model (ItemBase, inherited by Item below) needs an explicit JSON column
+# via sa_column. Plain (non-table) models like ItemUpdate don't need this —
+# they're just Pydantic validation, no database column involved.
 class ItemBase(SQLModel):
     title: str = Field(min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=255)
+    description: list[str] | None = Field(  # was: str | None, max_length=255
+        default=None, sa_column=Column(JSON)
+    )
 
 
 # Properties to receive on item creation
@@ -84,7 +91,7 @@ class ItemCreate(ItemBase):
 # Properties to receive on item update
 class ItemUpdate(SQLModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=255)
+    description: list[str] | None = Field(default=None)  # was: str | None, max_length=255
 
 
 # Database model, database table inferred from class name
