@@ -1,0 +1,11 @@
+{
+  "change_id": "field_renamed_full_name",
+  "endpoint": "/items/{id}",
+  "method": "GET",
+  "change_type": "field_renamed",
+  "breaking": true,
+  "old_schema_fragment": { "full_name": "string" },
+  "new_schema_fragment": { "name": "string" },
+  "severity": "high",
+  "detected_at": "2026-09-26T13:00:00Z"
+}
