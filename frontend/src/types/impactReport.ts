@@ -22,4 +22,5 @@ export interface ImpactReport {
   old_schema_fragment: Record<string, unknown> | null
   new_schema_fragment: Record<string, unknown> | null
   detected_at: string
+  all_endpoints: { endpoint: string; method: string }[] | null;
 }

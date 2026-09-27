@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import endpointRemoved from "@/mocks/impact-reports/drift-endpoint-removed.json"
-
 import fieldRenamed from "@/mocks/impact-reports/drift-field-renamed.json"
 import typeChanged from "@/mocks/impact-reports/drift-type-changed.json"
 import type { ImpactReport } from "@/types/impactReport"
@@ -57,12 +56,33 @@ function ImpactReportCard({ report }: { report: ImpactReport }) {
             {report.severity}
           </Badge>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          <span className="font-medium text-foreground">{report.method}</span>{" "}
-          {report.endpoint}
-          <span className="mx-2 text-muted-foreground/50">•</span>
-          <span className="capitalize">{report.change_type}</span>
-        </p>
+        <div className="text-sm text-muted-foreground mt-1">
+          <div>
+            <span className="font-medium text-foreground">{report.method}</span>{" "}
+            {report.endpoint}
+            <span className="mx-2 text-muted-foreground/50">•</span>
+            <span className="capitalize">{report.change_type}</span>
+          </div>
+
+          {/* Render extra affected endpoints if all_endpoints contains > 1 item */}
+          {report.all_endpoints && report.all_endpoints.length > 1 && (
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer text-emerald-600 dark:text-emerald-400 font-medium hover:underline">
+                Affects {report.all_endpoints.length} endpoints
+              </summary>
+              <ul className="mt-1.5 space-y-1 rounded-md bg-muted/60 p-2 font-mono text-[11px] text-foreground">
+                {report.all_endpoints.map((e) => (
+                  <li key={`${e.method}-${e.endpoint}`} className="flex gap-2">
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 uppercase">
+                      {e.method}
+                    </span>
+                    <span>{e.endpoint}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-6">
