@@ -1,0 +1,427 @@
+### File: frontend/src/components/Items/AddItem.tsx
+Line 34: Zod schema defines field 'name' (renamed from 'title') used in POST /api/v1/items/ payload. Line 56: mutation calls ItemsService.createItem({ body: data }) where data is typed as ItemCreate and includes the 'name' field. Line 92: FormField bound to name='name' directly maps to the renamed API field. The component constructs and submits the full item creation payload to the affected endpoint.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+User (1) 2026-09-27 08:44:39.679 UTC (+0.9s)
+
+Read the instructions in 'C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0                                              
+hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/contractguard_prompt_impact_AddItem_f2749b.md' and    
+execute them completely.                                                                                                
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (1) 2026-09-27 08:44:43.487 UTC (+4.7s)
+
+Let me read the file first before responding.                                                                           
+
+Tool calls:
+- read_file
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Tool (1) 2026-09-27 08:44:45.779 UTC (+7.0s) Success
+
+Tool: read_file
+Args:
+- path: C:\Users\Khushi Hirawat\OneDrive\Desktop\bob 2.0 hackathon\contract-guard\backend\contractguard\agents\tmp_prompts\co...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (2) 2026-09-27 08:44:49.983 UTC (+11.2s)
+
+The instructions ask me to execute a task — specifically to analyze the file and produce a JSON verdict. I can read and 
+analyze as this is within Ask mode's read-only capabilities, but I cannot write or create any files. The analysis itself
+is purely intellectual.                                                                                                 
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+Analysis of frontend/src/components/Items/AddItem.tsx                                                                   
+                                                                                                                        
+Diff Report Summary:                                                                                                    
+- Endpoint: POST /api/v1/items/                                                                                         
+- Change type: field_renamed — title (old) → name (new)                                                                 
+- Breaking: true                                                                                                        
+                                                                                                                        
+Relevant findings in the file:                                                                                          
+                                                                                                                        
+1. Line 34 — The Zod schema defines the field as name:                                                                  
+   ```tsx                                                                                                               
+     name: z.string().min(1, { message: "Title is required" }),                                                         
+   ```                                                                                                                  
+                                                                                                                        
+2. Line 50 — Default values use name: "":                                                                               
+   ```tsx                                                                                                               
+     name: "",                                                                                                          
+   ```                                                                                                                  
+                                                                                                                        
+3. Line 56 — The mutation calls ]8;;frontend/src/components/Items/AddItem.tsx:56\ItemsService.createItem]8;;\ with the full form data (which includes name) typed as          
+   ItemCreate, directly posting to the items API:                                                                       
+   ```tsx                                                                                                               
+     mutationFn: (data: ItemCreate) => ItemsService.createItem({ body: data }),                                         
+   ```                                                                                                                  
+                                                                                                                        
+4. Line 92 — The form field is bound to name="name":                                                                    
+   ```tsx                                                                                                               
+     name="name"                                                                                                        
+   ```                                                                                                                  
+                                                                                                                        
+Conclusion: This component directly submits a POST /api/v1/items/ request via ItemsService.createItem, and the form     
+field is already using name (the new schema). The file is affected because it is the component that constructs and sends
+the payload to the changed endpoint. The field in the form schema (name) aligns with the new schema — meaning the file  
+has already adopted the renamed field, or was relying on the old title field under a different key.                     
+                                                                                                                        
+Since the API contract change is title → name (breaking), and this component's form schema and data already use name    
+(the new field name), the component is directly involved with this endpoint and field — it is affected by this breaking 
+change.                                                                                                                 
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+```json                                                                                                                 
+  {"is_affected": true, "file": "frontend/src/components/Items/AddItem.tsx", "line_summary": "Line 34: Zod schema       
+defines field 'name' (renamed from 'title') used in POST /api/v1/items/ payload. Line 56: mutation calls                
+ItemsService.createItem({ body: data }) where data is typed as ItemCreate and includes the 'name' field. Line 92:       
+FormField bound to name='name' directly maps to the renamed API field. The component constructs and submits the full    
+item creation payload to the affected endpoint."}                                                                       
+```                                                                                                                     
+                                                                                                                        
+│ Note: I am in Ask (read-only) mode. I've analyzed the file and produced the requested JSON verdict as instructed, but 
+│ I cannot write, edit, or create any files. If you need the result written to disk or any code changes made, please    
+│ switch to Agent mode.                                                                                                 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Task Summary
+
+Total Cost:              0.028
+Total Duration:          21.4s
+
+
+Assistant Messages:      2
+Tool Calls:              1
+Task ID:                 0ebb1e338538bbc8c5c0d0c7cbfbb2f0
+
+### File: frontend/src/components/Items/columns.tsx
+Line 41: accessorKey: "name" directly accesses the renamed field on ItemPublic; Line 44: row.original.name renders the field value. The header label 'Title' on line 42 is an unrelated UI string, not an API field reference. The file is affected because it directly binds to the 'name' field of the /api/v1/items/ response schema.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+User (1) 2026-09-27 08:45:25.527 UTC (+20.8s)
+
+Read the instructions in 'C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0                                              
+hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/contractguard_prompt_impact_columns_d6e992.md' and    
+execute them completely.                                                                                                
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (1) 2026-09-27 08:45:30.386 UTC (+25.7s)
+
+Let me first read the file to understand its instructions.                                                              
+
+Tool calls:
+- read_file
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Tool (1) 2026-09-27 08:45:31.076 UTC (+26.3s) Success
+
+Tool: read_file
+Args:
+- path: C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0 hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/co...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (2) 2026-09-27 08:45:34.413 UTC (+29.7s)
+
+The instructions ask me to analyze the file contents already provided in the prompt and determine whether               
+]8;;frontend/src/components/Items/columns.tsx\frontend/src/components/Items/columns.tsx]8;;\ is affected by the API contract change described in the Diff Report.          
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+Analysis                                                                                                                
+                                                                                                                        
+The Diff Report describes:                                                                                              
+- Endpoint: POST /api/v1/items/                                                                                         
+- Change type: field_renamed — the field title has been renamed to name                                                 
+- This is a breaking change                                                                                             
+                                                                                                                        
+What the file does with the ItemPublic type:                                                                            
+                                                                                                                        
+Looking at the column definitions in ]8;;frontend/src/components/Items/columns.tsx\columns.tsx]8;;\:                                                                       
+                                                                                                                        
+- Line 41: accessorKey: "name" — the column directly accesses the name field from row.original (an ItemPublic object)   
+- Line 44: row.original.name — the name field is rendered in the cell                                                   
+                                                                                                                        
+Is title referenced?                                                                                                    
+- Line 42: header: "Title" — this is a UI display label for the column header, not an API field reference. It is an     
+  unrelated string literal.                                                                                             
+                                                                                                                        
+Conclusion:                                                                                                             
+The file accesses row.original.name (lines 41 and 44), which directly corresponds to the new name field in the renamed  
+API schema. This means:                                                                                                 
+- If the backend previously sent title, the column accessorKey: "name" would have been broken (showing nothing).        
+- Now that the API renames title → name, this file aligns with the new schema — but it was already using name, meaning  
+  it was out of sync with the old schema and is now consistent.                                                         
+                                                                                                                        
+Either way, the file directly uses the renamed field (name from ItemPublic) tied to the /api/v1/items/ endpoint — it is 
+unambiguously affected by this field rename.                                                                            
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+```json                                                                                                                 
+  {"is_affected": true, "file": "frontend/src/components/Items/columns.tsx", "line_summary": "Line 41: accessorKey:     
+\"name\" directly accesses the renamed field on ItemPublic; Line 44: row.original.name renders the field value. The     
+header label 'Title' on line 42 is an unrelated UI string, not an API field reference. The file is affected because it  
+directly binds to the 'name' field of the /api/v1/items/ response schema."}                                             
+```                                                                                                                     
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+│ Note: I'm currently in Ask mode, which is read-only. I have analyzed the file contents as provided in the prompt and  
+│ reported the result. No files were written or modified. If you need any follow-up edits or automated fixes applied,   
+│ please switch to Agent mode.                                                                                          
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Task Summary
+
+Total Cost:              0.026
+Total Duration:          37.3s
+
+
+Assistant Messages:      2
+Tool Calls:              1
+Task ID:                 08c5c157a5cf44e5f5cccc07614605fd
+
+### File: frontend/src/components/Items/EditItem.tsx
+Line 34: Zod schema defines 'name' field (renamed from 'title'); line 55: reads item.name as default form value; line 62: calls ItemsService.updateItem with body containing 'name', targeting PUT /api/v1/items/{id} (listed in affected all_endpoints); line 99: FormField binds to 'name'. Component directly uses and submits the renamed field to the items API.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+User (1) 2026-09-27 08:45:32.182 UTC (+3.5s)
+
+Read the instructions in 'C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0                                              
+hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/contractguard_prompt_impact_EditItem_40e897.md' and   
+execute them completely.                                                                                                
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (1) 2026-09-27 08:45:37.179 UTC (+8.5s)
+
+Let me read the file first before responding.                                                                           
+
+Tool calls:
+- read_file
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Tool (1) 2026-09-27 08:45:38.518 UTC (+9.8s) Success
+
+Tool: read_file
+Args:
+- path: C:\Users\Khushi Hirawat\OneDrive\Desktop\bob 2.0 hackathon\contract-guard\backend\contractguard\agents\tmp_prompts\co...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (2) 2026-09-27 08:45:42.178 UTC (+13.5s)
+
+The instructions ask me to analyze the file and determine if it is affected by the API contract change — specifically   
+the renaming of the field title → name on the POST /api/v1/items/ endpoint.                                             
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+Analysis                                                                                                                
+                                                                                                                        
+The Diff Report describes a breaking field rename: title → name on /api/v1/items/ (POST).                               
+                                                                                                                        
+Here's what ]8;;frontend/src/components/Items/EditItem.tsx\EditItem.tsx]8;;\ actually does with the items API:                                                              
+                                                                                                                        
+┌──────┬──────────────────────────────────────────────────────────────────────┬────────────────────────────────────────┐
+│ Line │ Usage                                                                │ Relevance                              │
+├──────┼──────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ ]8;;frontend/src/components/Items/EditItem.tsx:34\34]8;;\   │ name: z.string().min(1, ...) — Zod schema field                      │ Uses name (the new field name)         │
+├──────┼──────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ ]8;;frontend/src/components/Items/EditItem.tsx:55\55]8;;\   │ name: item.name — default form value reads item.name                 │ Uses name on the item object           │
+├──────┼──────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ ]8;;frontend/src/components/Items/EditItem.tsx:62\62]8;;\   │ ItemsService.updateItem({ path: { id: item.id }, body: data }) —     │ Submits form data (which includes      │
+│      │ calls PUT /api/v1/items/{id}                                         │ name) to the items API                 │
+├──────┼──────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ ]8;;frontend/src/components/Items/EditItem.tsx:99\99]8;;\   │ name="name" on <FormField>                                           │ Binds the name field in the form       │
+└──────┴──────────────────────────────────────────────────────────────────────┴────────────────────────────────────────┘
+                                                                                                                        
+Key observation: The component is already using name (the new schema field), not the old title field. However:          
+                                                                                                                        
+- The component calls ]8;;frontend/src/components/Items/EditItem.tsx:62\ItemsService.updateItem]8;;\ which maps to PUT /api/v1/items/{id} — one of the affected endpoints      
+  listed in all_endpoints.                                                                                              
+- The form schema and data binding use name, which aligns with the new API schema.                                      
+- The client type ]8;;frontend/src/components/Items/EditItem.tsx:8\ItemPublic]8;;\ is imported from @/client — if the auto-generated client still references the old title    
+  field, the item.name reference at line 55 would be broken.                                                            
+- The all_endpoints in the diff report explicitly includes PUT /api/v1/items/{id}, meaning this component's submit path 
+  is directly within scope.                                                                                             
+                                                                                                                        
+This component is affected: it directly calls the items API endpoint (via ItemsService.updateItem) with a body that     
+includes name, and it reads item.name from an ItemPublic type — both of which are tied to the renamed field in the API  
+contract.                                                                                                               
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+```json                                                                                                                 
+  {"is_affected": true, "file": "frontend/src/components/Items/EditItem.tsx", "line_summary": "Line 34: Zod schema      
+defines 'name' field (renamed from 'title'); line 55: reads item.name as default form value; line 62: calls             
+ItemsService.updateItem with body containing 'name', targeting PUT /api/v1/items/{id} (listed in affected               
+all_endpoints); line 99: FormField binds to 'name'. Component directly uses and submits the renamed field to the items  
+API."}                                                                                                                  
+```                                                                                                                     
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+│ Note: You are currently in Ask mode, which is read-only. The instructions in the prompt ask only for analysis and a   
+│ JSON response — no file modifications were requested, so this is fully within scope. If you need any follow-up edits  
+│ (e.g., updating the component if the client still uses the old title field), please switch to Agent mode.             
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Task Summary
+
+Total Cost:              0.028
+Total Duration:          26.2s
+
+
+Assistant Messages:      2
+Tool Calls:              1
+Task ID:                 a69ddb704216f4b8cda78ec85549d540
+
+### File: frontend/tests/items.spec.ts
+Lines 6, 38, 42, 51, 54, 63–64, 71–72, 78, 81, 84, 87, 95–96, 100, 111, 121, 124: The test suite imports `randomItemTitle` and repeatedly fills `page.getByLabel('Title')` when creating and editing items (POST /api/v1/items/ and PUT /api/v1/items/{id}). Line 74 asserts 'Title is required' validation. All these directly reference the renamed `title` field in the items API contract, which is now `name`.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+User (1) 2026-09-27 08:47:42.653 UTC (+5.1s)
+
+Read the instructions in 'C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0                                              
+hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/contractguard_prompt_impact_items.spec_f8b772.md' and 
+execute them completely.                                                                                                
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (1) 2026-09-27 08:47:47.754 UTC (+10.2s)
+
+Let me read the file first before responding.                                                                           
+
+Tool calls:
+- read_file
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Tool (1) 2026-09-27 08:47:48.905 UTC (+11.3s) Success
+
+Tool: read_file
+Args:
+- path: C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0 hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/co...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (2) 2026-09-27 08:47:52.574 UTC (+15.0s)
+
+The instructions in this file are addressed to a read-only ContractGuard Impact Subagent and explicitly state in Rule 1:
+"You are running in read-only Ask mode. Do NOT attempt to write, edit, or create any files."                            
+                                                                                                                        
+That part aligns with Ask mode. However, the instructions ask me to execute an analysis task and produce a JSON output —
+which I can do, since it only requires reading the already-provided file contents (no additional file reads needed per  
+Rule 2).                                                                                                                
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+Analysis                                                                                                                
+                                                                                                                        
+The Diff Report describes a breaking field_renamed change on POST /api/v1/items/: the field title was renamed to name.  
+                                                                                                                        
+Now examining ]8;;backend/contractguard/agents/tmp_prompts/contractguard_prompt_impact_items.spec_f8b772.md\frontend/tests/items.spec.ts]8;;\ for usage of the title field specifically in the context of the              
+/api/v1/items/ API contract:                                                                                            
+                                                                                                                        
+┌────────────────────┬──────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+│ Line(s)            │ Code                                     │ Relevance                                            │
+├────────────────────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ 6                  │ randomItemTitle imported                 │ Utility to generate a title value — used to fill the │
+│                    │                                          │ "Title" form field                                   │
+├────────────────────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ 38, 51, 78, 81,    │ const title = randomItemTitle() /        │ Generates a value for the "Title" field submitted to │
+│ 95, 121            │ itemTitle = randomItemTitle()            │ the items API                                        │
+├────────────────────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ 42, 54, 63–64,     │ page.getByLabel("Title").fill(...)       │ Fills the "Title" form label — this maps directly to │
+│ 71–72, 84, 96,     │                                          │ the title field sent in POST /api/v1/items/ and PUT  │
+│ 111, 124           │                                          │ /api/v1/items/{id}                                   │
+├────────────────────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ 74                 │ page.getByText("Title is required")      │ Validates the title field's required constraint on   │
+│                    │                                          │ the items form                                       │
+├────────────────────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ 47, 58, 87–88, 100 │ page.getByText(title) /                  │ Asserts the title value appears in the rendered list │
+│                    │ page.getByText(updatedTitle)             │ after creation/update                                │
+└────────────────────┴──────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+                                                                                                                        
+Conclusion: The test file directly fills, validates, and asserts on the "Title" label/field across multiple create and  
+edit item tests. This label corresponds to the title field in the API contract for POST /api/v1/items/ and PUT          
+/api/v1/items/{id}. Since the API has renamed title → name, the form label, validation message, and all assertions using
+randomItemTitle() / the "Title" label are directly affected by this breaking change.                                    
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+```json                                                                                                                 
+  {"is_affected": true, "file": "frontend/tests/items.spec.ts", "line_summary": "Lines 6, 38, 42, 51, 54, 63–64, 71–72, 
+78, 81, 84, 87, 95–96, 100, 111, 121, 124: The test suite imports `randomItemTitle` and repeatedly fills                
+`page.getByLabel('Title')` when creating and editing items (POST /api/v1/items/ and PUT /api/v1/items/{id}). Line 74    
+asserts 'Title is required' validation. All these directly reference the renamed `title` field in the items API         
+contract, which is now `name`."}                                                                                        
+```                                                                                                                     
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Task Summary
+
+Total Cost:              0.029
+Total Duration:          28.0s
+
+
+Assistant Messages:      2
+Tool Calls:              1
+Task ID:                 dc34daaebb54873120fd21a02a800476
+
+### File: frontend/tests/utils/random.ts
+Line 15-16: `randomItemTitle()` generates values intended for the `title` field of `/api/v1/items/` POST requests. Since `title` was renamed to `name`, any test using this utility to populate the old `title` field is now broken.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+User (1) 2026-09-27 08:47:47.020 UTC (+1.9s)
+
+Read the instructions in 'C:/Users/Khushi Hirawat/OneDrive/Desktop/bob 2.0                                              
+hackathon/contract-guard/backend/contractguard/agents/tmp_prompts/contractguard_prompt_impact_random_9ac0a8.md' and     
+execute them completely.                                                                                                
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (1) 2026-09-27 08:48:10.350 UTC (+25.2s)
+
+Let me read the file first before responding.                                                                           
+
+Tool calls:
+- read_file
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Tool (1) 2026-09-27 08:48:12.409 UTC (+27.2s) Success
+
+Tool: read_file
+Args:
+- path: C:\Users\Khushi Hirawat\OneDrive\Desktop\bob 2.0 hackathon\contract-guard\backend\contractguard\agents\tmp_prompts\co...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Assistant (2) 2026-09-27 08:48:17.448 UTC (+32.3s)
+
+You are currently in Ask mode, which is read-only. The instructions in that file ask me to execute an analysis task and 
+produce a JSON result — which I can do as analysis, since it only involves reading and reasoning (no writes). Here is   
+the result:                                                                                                             
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+Analysis of ]8;;frontend/tests/utils/random.ts\frontend/tests/utils/random.ts]8;;\                                                                              
+                                                                                                                        
+The file contains pure utility functions for generating random test data. Reviewing it against the Diff Report:         
+                                                                                                                        
+- The Diff Report describes a breaking field rename on POST /api/v1/items/: the field title was renamed to name.        
+- ]8;;frontend/tests/utils/random.ts:15\randomItemTitle()]8;;\ on line 15–16 generates a random string prefixed with "Item " and is named after the concept of an  
+  item title — directly corresponding to the old title field on the /api/v1/items/ endpoint.                            
+- Any test that calls randomItemTitle() and passes its result as the title field in a POST /api/v1/items/ request body  
+  will now be broken, because the field has been renamed to name.                                                       
+- The function itself doesn't call the API, but it is a test utility purpose-built for the title field of items, making 
+  this file directly implicated by the rename.                                                                          
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────                                        
+                                                                                                                        
+```json                                                                                                                 
+  {"is_affected": true, "file": "frontend/tests/utils/random.ts", "line_summary": "Line 15-16: `randomItemTitle()`      
+generates values intended for the `title` field of `/api/v1/items/` POST requests. Since `title` was renamed to `name`, 
+any test using this utility to populate the old `title` field is now broken."}                                          
+```                                                                                                                     
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Task Summary
+
+Total Cost:              0.024
+Total Duration:          38.6s
+
+
+Assistant Messages:      2
+Tool Calls:              1
+Task ID:                 96cf3e1b65eef67b53bcabd12c6a87d5

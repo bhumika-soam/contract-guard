@@ -3,7 +3,7 @@ import { createUser } from "./utils/privateApi"
 import {
   randomEmail,
   randomItemDescription,
-  randomItemTitle,
+  randomItemName,
   randomPassword,
 } from "./utils/random"
 import { logInUser } from "./utils/user"
@@ -35,11 +35,11 @@ test.describe("Items management", () => {
   })
 
   test("Create a new item successfully", async ({ page }) => {
-    const title = randomItemTitle()
+    const title = randomItemName()
     const description = randomItemDescription()
 
     await page.getByRole("button", { name: "Add Item" }).click()
-    await page.getByLabel("Title").fill(title)
+    await page.getByLabel("Name").fill(title)
     await page.getByLabel("Description").fill(description)
     await page.getByRole("button", { name: "Save" }).click()
 
@@ -48,10 +48,10 @@ test.describe("Items management", () => {
   })
 
   test("Create item with only required fields", async ({ page }) => {
-    const title = randomItemTitle()
+    const title = randomItemName()
 
     await page.getByRole("button", { name: "Add Item" }).click()
-    await page.getByLabel("Title").fill(title)
+    await page.getByLabel("Name").fill(title)
     await page.getByRole("button", { name: "Save" }).click()
 
     await expect(page.getByText("Item created successfully")).toBeVisible()
@@ -60,28 +60,28 @@ test.describe("Items management", () => {
 
   test("Cancel item creation", async ({ page }) => {
     await page.getByRole("button", { name: "Add Item" }).click()
-    await page.getByLabel("Title").fill("Test Item")
+    await page.getByLabel("Name").fill("Test Item")
     await page.getByRole("button", { name: "Cancel" }).click()
 
     await expect(page.getByRole("dialog")).not.toBeVisible()
   })
 
-  test("Title is required", async ({ page }) => {
+  test("Name is required", async ({ page }) => {
     await page.getByRole("button", { name: "Add Item" }).click()
-    await page.getByLabel("Title").fill("")
-    await page.getByLabel("Title").blur()
+    await page.getByLabel("Name").fill("")
+    await page.getByLabel("Name").blur()
 
-    await expect(page.getByText("Title is required")).toBeVisible()
+    await expect(page.getByText("Name is required")).toBeVisible()
   })
 
   test.describe("Edit and Delete", () => {
     let itemTitle: string
 
     test.beforeEach(async ({ page }) => {
-      itemTitle = randomItemTitle()
+      itemTitle = randomItemName()
 
       await page.getByRole("button", { name: "Add Item" }).click()
-      await page.getByLabel("Title").fill(itemTitle)
+      await page.getByLabel("Name").fill(itemTitle)
       await page.getByRole("button", { name: "Save" }).click()
       await expect(page.getByText("Item created successfully")).toBeVisible()
       await expect(page.getByRole("dialog")).not.toBeVisible()
@@ -92,8 +92,8 @@ test.describe("Items management", () => {
       await itemRow.getByRole("button").last().click()
       await page.getByRole("menuitem", { name: "Edit Item" }).click()
 
-      const updatedTitle = randomItemTitle()
-      await page.getByLabel("Title").fill(updatedTitle)
+      const updatedTitle = randomItemName()
+      await page.getByLabel("Name").fill(updatedTitle)
       await page.getByRole("button", { name: "Save" }).click()
 
       await expect(page.getByText("Item updated successfully")).toBeVisible()

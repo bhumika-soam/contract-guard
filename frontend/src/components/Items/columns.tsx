@@ -39,7 +39,7 @@ export const columns: ColumnDef<ItemPublic>[] = [
   },
   {
     accessorKey: "name",
-    header: "Title",
+    header: "Name",
     cell: ({ row }) => (
       <span className="font-medium">{row.original.name}</span>
     ),
