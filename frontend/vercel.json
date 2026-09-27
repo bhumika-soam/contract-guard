@@ -1,5 +1,8 @@
    {
      "redirects": [
        { "source": "/", "destination": "/impact-report", "permanent": false }
+     ],
+     "rewrites": [
+       { "source": "/(.*)", "destination": "/index.html" }
      ]
    }
