@@ -49,9 +49,9 @@ export type HTTPValidationError = {
  */
 export type ItemCreate = {
     /**
-     * Title
+     * Name
      */
-    title: string;
+    name: string;
     /**
      * Description
      */
@@ -63,9 +63,9 @@ export type ItemCreate = {
  */
 export type ItemPublic = {
     /**
-     * Title
+     * Name
      */
-    title: string;
+    name: string;
     /**
      * Description
      */
@@ -89,9 +89,9 @@ export type ItemPublic = {
  */
 export type ItemUpdate = {
     /**
-     * Title
+     * Name
      */
-    title?: string | null;
+    name?: string | null;
     /**
      * Description
      */

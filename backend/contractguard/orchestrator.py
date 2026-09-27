@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import uuid
 
 # orchestrator.py is in backend/contractguard/, so prompts live in ./agents/
@@ -38,6 +37,17 @@ DEFAULT_OUTPUT_FILE = AGENTS_DIR / "impact_report.json"
 
 MAX_RETRIES = 3
 MAX_PARALLEL_SUBAGENTS = 4  # Bounds concurrent Bob CLI processes
+
+# FIX A: prompt files must live INSIDE the Bob workspace (REPO_ROOT), not the
+# OS temp dir. Bob CLI enforces a workspace boundary and refuses to read
+# anything outside it ("the file is outside the workspace boundary") -- this
+# is what silently broke every Repair/Verify/Impact-subagent call in the Day-2
+# run, since run_bob() was writing to tempfile.gettempdir(). This folder must
+# NOT match .bobignore's `_current_prompt*.md` pattern (that was the earlier,
+# different bug) -- the "contractguard_prompt_*.md" filename already avoids
+# that, so simply relocating it here satisfies both constraints at once.
+TMP_PROMPT_DIR = AGENTS_DIR / "tmp_prompts"
+TMP_PROMPT_REL_PREFIX = TMP_PROMPT_DIR.relative_to(REPO_ROOT).as_posix() + "/"
 
 # Path segments too generic to use as a candidate-file search token on their own
 # (e.g. "/api/v1/items/{id}" should search for "items", not "api").
@@ -96,21 +106,26 @@ def merge_diff_entries(entries: list[dict]) -> dict:
 def run_bob(prompt: str, mode: str, task_label: str = "main") -> str:
     """Thread-safe Bob CLI runner using a unique prompt file per subagent call.
 
-    FIX: the temp prompt file is now written to the OS temp directory, not
-    inside the repo. Writing it inside the repo (agents/_current_prompt_*.md)
-    matched .bobignore's `_current_prompt*.md` pattern, which made agents
-    inconsistently refuse or shell-bypass reading their own instructions
-    (this is exactly what broke the retry loop on Day 2: attempt 1 bypassed
-    it via PowerShell, attempt 2 correctly refused and did nothing). Outside
-    the repo, .bobignore never applies, so every attempt behaves identically.
+    FIX A (this session): the OS temp dir (tempfile.gettempdir()) sits OUTSIDE
+    the Bob workspace boundary (REPO_ROOT), and current Bob CLI refuses to
+    read any path outside it -- this is exactly what broke every Impact/
+    Repair/Verify call in the Day-2 run ("the file is outside the workspace
+    boundary"). The earlier fix (see below) correctly solved a DIFFERENT
+    problem -- .bobignore blocking `_current_prompt*.md` inside the repo --
+    but moved the file too far, past the workspace boundary entirely. Writing
+    to TMP_PROMPT_DIR (inside REPO_ROOT, filename still "contractguard_prompt_
+    *.md" so it still avoids the .bobignore pattern) satisfies both fixes at
+    once. TMP_PROMPT_DIR should be added to .gitignore and .bobignore so its
+    contents are never committed or treated as candidate source files.
     """
     bob_path = shutil.which("bob")
     if not bob_path:
         print("❌ Error: 'bob' CLI not found in PATH.")
         sys.exit(1)
 
+    TMP_PROMPT_DIR.mkdir(parents=True, exist_ok=True)
     unique_id = f"{task_label}_{uuid.uuid4().hex[:6]}"
-    prompt_file = pathlib.Path(tempfile.gettempdir()) / f"contractguard_prompt_{unique_id}.md"
+    prompt_file = TMP_PROMPT_DIR / f"contractguard_prompt_{unique_id}.md"
     prompt_file.write_text(prompt, encoding="utf-8")
 
     short_instruction = (
@@ -380,8 +395,28 @@ def enforce_file_allowlist(affected_files: list[str]) -> list[str]:
             path_part = path_part.split("->")[-1].strip().strip('"')
         changed.append((status_code, path_part.replace("\\", "/")))
 
+    # FIX C: the orchestrator writes its own housekeeping files every run
+    # (latest_impact_findings.txt before Repair even starts) regardless of
+    # how many files Impact found. When affected_files is empty -- as
+    # happened when every Impact subagent failed -- `allowed` was also
+    # empty, so the orchestrator's OWN write got flagged and reverted as an
+    # "out-of-scope Repair Agent edit," which it never was. Whitelist these
+    # explicitly so a real scope violation isn't confused with our own
+    # bookkeeping, and exclude the tmp-prompt dir as a belt-and-braces check
+    # (its files are deleted immediately after each run_bob call, but this
+    # guards against any left behind by an interrupted run).
+    orchestrator_owned = {
+        (AGENTS_DIR / "latest_impact_findings.txt").relative_to(REPO_ROOT).as_posix(),
+        (AGENTS_DIR / "impact_report.json").relative_to(REPO_ROOT).as_posix(),
+    }
+
     allowed = {f.replace("\\", "/") for f in affected_files}
-    violations = [path for _, path in changed if path not in allowed]
+    violations = [
+        path for _, path in changed
+        if path not in allowed
+        and path not in orchestrator_owned
+        and not path.startswith(TMP_PROMPT_REL_PREFIX)
+    ]
 
     for status_code, path in changed:
         if path not in violations:
@@ -562,8 +597,50 @@ def run_orchestrator(
         verify_status = str(verify_json.get("verify_status", "")).lower()
         verify_log = verify_json.get("verify_log", verify_output)
 
+        # FIX B: fail-safe default. Previously, if Bob's response had no
+        # explicit {"verify_status": ...} JSON block, this defaulted to
+        # "pass" unless the literal substring "error ts" appeared anywhere
+        # in the output -- so a Verify Agent that never ran tsc/the build at
+        # all (e.g. blocked from reading its own prompt file, refused, or
+        # errored before touching the codebase) was silently reported as a
+        # PASS. This mirrors bug #9's fix for the Impact Agent: an
+        # unparseable or incomplete result must default to FAIL, and a
+        # workspace-boundary refusal must be recognized explicitly rather
+        # than relying on one narrow substring check.
+        REFUSAL_MARKERS = (
+            "outside the workspace",
+            "outside the current workspace",
+            "cannot read",
+            "i cannot access",
+            "tools are blocked",
+            "tool access to it is blocked",
+        )
         if verify_status not in ("pass", "fail"):
-            verify_status = "fail" if "error ts" in verify_output.lower() else "pass"
+            lowered = verify_output.lower()
+            if any(marker in lowered for marker in REFUSAL_MARKERS):
+                verify_status = "fail"
+                verify_log = (
+                    "Verify Agent could not read its own instructions or was "
+                    "blocked from executing (workspace-boundary refusal). "
+                    "Treated as FAIL, not a silent pass. Raw output:\n"
+                    + verify_output
+                )
+            elif "error ts" in lowered:
+                verify_status = "fail"
+            else:
+                # No explicit verify_status JSON AND no recognizable
+                # failure/refusal text either: still FAIL. Never assume a
+                # build passed just because a specific error string wasn't
+                # spotted -- absence of evidence of failure is not evidence
+                # of a pass.
+                verify_status = "fail"
+                verify_log = (
+                    "Verify Agent did not return a parseable "
+                    '{"verify_status": ...} result, and no pass/fail signal '
+                    "could be confirmed in its output. Treated as FAIL by "
+                    "default (fail-safe) rather than assumed pass. Raw "
+                    "output:\n" + verify_output
+                )
 
         if verify_status == "pass":
             patch_applied = True
