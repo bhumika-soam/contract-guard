@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 
 # orchestrator.py is in backend/contractguard/, so prompts live in ./agents/
@@ -23,7 +24,13 @@ if ENV_FILE.exists():
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-DEFAULT_DIFF_FILE = AGENTS_DIR / "sample_diff_report.json"
+# NOTE: sample_diff_report.json is kept ONLY as a reference/example for manual
+# testing. It is intentionally NEVER used as a silent default anymore — see the
+# argparse setup at the bottom, where diff_file is now a REQUIRED argument.
+# (Root cause of the Day-2 "full_name -> name" run: this constant used to be
+# argparse's silent default, so an invocation without the path argument quietly
+# ran against stale Day-1 sample data instead of a real diff_report_*.json.)
+SAMPLE_DIFF_FILE_FOR_REFERENCE_ONLY = AGENTS_DIR / "sample_diff_report.json"
 IMPACT_PROMPT_FILE = AGENTS_DIR / "impact_agent_prompt.md"
 REPAIR_PROMPT_FILE = AGENTS_DIR / "repair_agent_prompt.md"
 VERIFY_PROMPT_FILE = AGENTS_DIR / "verify_agent_prompt.md"
@@ -32,19 +39,78 @@ DEFAULT_OUTPUT_FILE = AGENTS_DIR / "impact_report.json"
 MAX_RETRIES = 3
 MAX_PARALLEL_SUBAGENTS = 4  # Bounds concurrent Bob CLI processes
 
+# Path segments too generic to use as a candidate-file search token on their own
+# (e.g. "/api/v1/items/{id}" should search for "items", not "api").
+GENERIC_PATH_SEGMENTS = {"api", "v1", "v2", "v3"}
+
+
 def make_change_id(diff_entry: dict) -> str:
     endpoint_slug = diff_entry["endpoint"].strip("/").replace("/", "_").replace("{", "").replace("}", "")
     return f"{diff_entry['change_type']}_{endpoint_slug}"
-    
+
+
+def merge_diff_entries(entries: list[dict]) -> dict:
+    """Collapses multiple diff_report entries describing the SAME underlying
+    breaking change (same change_type + same old/new schema fragment) into one
+    diff_data dict with an `all_endpoints` list.
+
+    RESTORED FIX: Mahi's real diff_report_*.json files are JSON arrays — e.g.
+    field-renamed and type-changed each contain 3 entries (POST/GET/PUT on the
+    same field). Without this, the pipeline kept only entries[0] and silently
+    dropped the other two (this was previously fixed and logged as bug #5 in
+    khushi-day1-log.md, but the fix is not present in the file that was
+    uploaded here — this restores it).
+    """
+    if not entries:
+        return {}
+    if len(entries) == 1:
+        return entries[0]
+
+    def signature(e: dict) -> tuple:
+        return (
+            e.get("change_type"),
+            json.dumps(e.get("old_schema_fragment"), sort_keys=True),
+            json.dumps(e.get("new_schema_fragment"), sort_keys=True),
+        )
+
+    base_sig = signature(entries[0])
+    same_signature = [e for e in entries if signature(e) == base_sig]
+    different = [e for e in entries if signature(e) != base_sig]
+
+    if different:
+        print(
+            f"⚠️ {len(different)} of {len(entries)} diff entries have a DIFFERENT "
+            f"change signature than entries[0] and will NOT be merged in — they are "
+            f"being ignored this run. If this diff_report file is meant to describe "
+            f"more than one distinct breaking change, run each signature as its own "
+            f"diff_report file instead."
+        )
+
+    merged = dict(same_signature[0])
+    merged["all_endpoints"] = [
+        {"endpoint": e.get("endpoint"), "method": e.get("method")} for e in same_signature
+    ]
+    return merged
+
+
 def run_bob(prompt: str, mode: str, task_label: str = "main") -> str:
-    """Thread-safe Bob CLI runner using a unique prompt file per subagent call."""
+    """Thread-safe Bob CLI runner using a unique prompt file per subagent call.
+
+    FIX: the temp prompt file is now written to the OS temp directory, not
+    inside the repo. Writing it inside the repo (agents/_current_prompt_*.md)
+    matched .bobignore's `_current_prompt*.md` pattern, which made agents
+    inconsistently refuse or shell-bypass reading their own instructions
+    (this is exactly what broke the retry loop on Day 2: attempt 1 bypassed
+    it via PowerShell, attempt 2 correctly refused and did nothing). Outside
+    the repo, .bobignore never applies, so every attempt behaves identically.
+    """
     bob_path = shutil.which("bob")
     if not bob_path:
         print("❌ Error: 'bob' CLI not found in PATH.")
         sys.exit(1)
 
     unique_id = f"{task_label}_{uuid.uuid4().hex[:6]}"
-    prompt_file = AGENTS_DIR / f"_current_prompt_{unique_id}.md"
+    prompt_file = pathlib.Path(tempfile.gettempdir()) / f"contractguard_prompt_{unique_id}.md"
     prompt_file.write_text(prompt, encoding="utf-8")
 
     short_instruction = (
@@ -61,7 +127,7 @@ def run_bob(prompt: str, mode: str, task_label: str = "main") -> str:
             env=os.environ.copy(),
         )
     finally:
-        # Clean up temporary prompt file so the agents folder stays clean
+        # Clean up temporary prompt file so temp dir stays clean
         if prompt_file.exists():
             try:
                 prompt_file.unlink()
@@ -93,26 +159,64 @@ def extract_last_json(text: str) -> dict:
             continue
     return {}
 
+def _derive_search_token(old_field: str, endpoint: str, change_type: str = "") -> str:
+    """Picks a meaningful literal substring to grep for across the frontend.
 
-def find_candidate_frontend_files(old_field: str, endpoint: str) -> list[str]:
-    """Finds candidate frontend files referencing the changed field or endpoint to scan in parallel."""
-    frontend_src = REPO_ROOT / "frontend" / "src"
-    if not frontend_src.exists():
+    FIX: for endpoint_removed, old_field is NEVER a useful search token —
+    Mahi's diff_agent.py sets old_schema_fragment to the entire old response
+    body (e.g. {"message": "string"}), so old_field is some unrelated
+    response field name, not the endpoint's resource name. The previous
+    check (`old_field != "unknown"`) never caught this, since old_field is
+    never literally "unknown" for this change_type. endpoint_removed must
+    ALWAYS use the endpoint-path-derived token, regardless of old_field.
+
+    For every other change_type, old_field (when present) is still the most
+    precise literal token to search for.
+    """
+    use_endpoint_fallback = (
+        change_type == "endpoint_removed"
+        or not old_field
+        or old_field == "unknown"
+    )
+    if not use_endpoint_fallback:
+        return old_field
+    segments = [s for s in endpoint.strip("/").split("/") if s and not s.startswith("{")]
+    meaningful = [s for s in segments if s.lower() not in GENERIC_PATH_SEGMENTS]
+    if meaningful:
+        return meaningful[0]
+    return segments[0] if segments else ""
+
+
+def find_candidate_frontend_files(old_field: str, endpoint: str, change_type: str = "") -> list[str]:
+    """Finds candidate frontend files referencing the changed field or endpoint to scan in parallel.
+
+    FIX: now scans the ENTIRE `frontend/` tree (src, tests, everything),
+    not just `frontend/src`. The Day-2 endpoint-removed run's real breaking
+    references lived in `frontend/tests/user-settings.spec.ts` and
+    `frontend/tests/utils/privateApi.ts` — outside the old scan root — so
+    they were structurally invisible to the Impact Agent no matter what the
+    diff report said. node_modules/dist/build output and the mock-report
+    output folder are excluded so we don't scan generated or irrelevant files.
+    """
+    frontend_root = REPO_ROOT / "frontend"
+    if not frontend_root.exists():
+        return []
+
+    excluded_path_fragments = ("node_modules", "/dist/", "/build/", "mocks/impact-reports")
+    search_token = _derive_search_token(old_field, endpoint, change_type)
+    if not search_token:
         return []
 
     candidates = []
-    search_token = old_field if old_field and old_field != "unknown" else endpoint.strip("/").split("/")[0]
-
-    for file_path in sorted(frontend_src.rglob("*")):
+    for file_path in sorted(frontend_root.rglob("*")):
         if not file_path.is_file() or file_path.suffix not in (".ts", ".tsx", ".js", ".jsx"):
             continue
-        # Skip mock impact reports so the agent doesn't scan its own output files
         rel_posix = file_path.relative_to(REPO_ROOT).as_posix()
-        if "mocks/impact-reports" in rel_posix:
+        if any(fragment in f"/{rel_posix}/" or fragment.strip("/") in rel_posix for fragment in excluded_path_fragments):
             continue
         try:
             content = file_path.read_text(encoding="utf-8-sig")
-            if search_token and search_token in content:
+            if search_token.lower() in content.lower():
                 candidates.append(rel_posix)
         except OSError:
             continue
@@ -153,7 +257,8 @@ def run_parallel_impact_agents(
     """
     impact_base_prompt = IMPACT_PROMPT_FILE.read_text(encoding="utf-8-sig")
     endpoint = str(diff_data.get("endpoint", ""))
-    candidates = find_candidate_frontend_files(old_field, endpoint)
+    change_type = str(diff_data.get("change_type", ""))
+    candidates = find_candidate_frontend_files(old_field, endpoint, change_type)
 
     if candidates:
         print(
@@ -192,8 +297,8 @@ def run_parallel_impact_agents(
         if affected_files:
             file_count = len(affected_files)
             summary_plain_english = (
-                f"The '{old_field}' field was renamed to '{new_field}' on {endpoint} "
-                f"across {file_count} files. Any frontend code reading .{old_field} will now get undefined."
+                f"The '{old_field}' field was changed on {endpoint} "
+                f"affecting {file_count} files."
             )
             combined_output = "\n\n".join(combined_sections)
             return affected_files, summary_plain_english, combined_output
@@ -217,13 +322,118 @@ def run_parallel_impact_agents(
     return affected_files, summary_plain_english, impact_output
 
 
+def enforce_file_allowlist(affected_files: list[str]) -> list[str]:
+    """Reverts any file the Repair Agent touched that wasn't in affected_files.
+
+    NEW GUARDRAIL. Zero Bobcoin cost — pure git/python, runs after Repair
+    Agent and before Verify Agent. If the agent edited anything outside the
+    Impact Agent's approved file list (e.g. backend/app/, backend/tests/, or
+    an unrelated frontend component), those specific files are reverted (or,
+    if newly created, deleted) in place, and the violation is reported so the
+    caller can treat the attempt as failed WITHOUT spending a Verify call
+    on a doomed run.
+
+    Uses `git status --porcelain` rather than `git diff --name-only`: the
+    latter only shows changes to files git already tracks, so a Repair Agent
+    that CREATES a new out-of-scope file would slip past it entirely.
+    `--porcelain` also reports untracked (`??`) files, which are handled by
+    deletion rather than `git checkout --` (checkout can't restore a file
+    that was never tracked).
+
+    Returns the list of out-of-scope files that were found and reverted.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"⚠️ Could not run 'git status' to check the file allowlist: {exc}")
+        return []
+
+    changed = []  # list of (status_code, path)
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        status_code = line[:2]
+        path_part = line[3:].strip().strip('"')
+        if "->" in path_part:  # rename/copy: "old -> new"
+            path_part = path_part.split("->")[-1].strip().strip('"')
+        changed.append((status_code, path_part.replace("\\", "/")))
+
+    allowed = {f.replace("\\", "/") for f in affected_files}
+    violations = [path for _, path in changed if path not in allowed]
+
+    for status_code, path in changed:
+        if path not in violations:
+            continue
+        try:
+            if status_code.strip() == "??":
+                # Untracked new file — nothing for git to revert to, so delete it.
+                target = REPO_ROOT / path
+                if target.exists():
+                    target.unlink()
+            else:
+                subprocess.run(["git", "checkout", "--", path], check=True, cwd=REPO_ROOT)
+        except (subprocess.CalledProcessError, OSError) as exc:
+            print(f"⚠️ Could not revert out-of-scope file {path}: {exc}")
+
+    return violations
+
+
+def _build_task_instruction(diff_data: dict, old_field: str, new_field: str, file_count: int) -> str:
+    """Change-type-aware Repair Agent instructions.
+
+    FIX: the old prompt always said "rename '{old_field}' to '{new_field}'"
+    no matter what actually happened — actively misleading for
+    field_type_changed (same name, new type) and endpoint_removed (no field
+    mapping at all, an endpoint disappeared). This was already flagged as an
+    open risk in khushi-day1-log.md before branch B/C were ever run for real.
+    """
+    change_type = str(diff_data.get("change_type", "")).lower()
+
+    if change_type == "field_renamed":
+        return (
+            f"Update ONLY the {file_count} files listed above: rename the field '{old_field}' to "
+            f"'{new_field}' everywhere it is used (type definitions, destructuring, JSX rendering, "
+            f"form schemas). Do not touch any unrelated variables, formatting, or other lines in those files."
+        )
+    if change_type in ("field_type_changed", "type_changed"):
+        return (
+            f"Update ONLY the {file_count} files listed above: the field '{old_field}' changed type "
+            f"(see old_schema_fragment/new_schema_fragment in the Diff Report above for the exact old/new "
+            f"type). This is NOT a rename — the field name is unchanged, only its type changed. Update type "
+            f"definitions and any code that assumes the old type (parsing, formatting, comparisons). "
+            f"Do not touch any unrelated variables, formatting, or other lines in those files."
+        )
+    if change_type == "endpoint_removed":
+        return (
+            f"Update ONLY the {file_count} files listed above: the endpoint "
+            f"{diff_data.get('method', '')} {diff_data.get('endpoint', '')} has been removed entirely. "
+            f"This is NOT a rename or type change — there is no old/new field mapping to apply. Remove or "
+            f"safely guard every call site that depended on this endpoint (delete the API call, remove or "
+            f"disable any UI control that triggered it — e.g. a delete button — and handle the resulting "
+            f"UI state gracefully). Do not touch any unrelated variables, formatting, or other lines in those files."
+        )
+    return (
+        f"Update ONLY the {file_count} files listed above to resolve the breaking change described in the "
+        f"Diff Report. Do not touch any unrelated variables, formatting, or other lines in those files."
+    )
+
+
 def run_orchestrator(
-    diff_input: str | pathlib.Path | dict = DEFAULT_DIFF_FILE,
+    diff_input: str | pathlib.Path | dict,
     output_path: str | pathlib.Path = DEFAULT_OUTPUT_FILE,
 ) -> dict:
     """
-    Runs Parallel Impact Subagents -> Repair Agent -> Verify Agent (with bounded retries)
-    and writes impact_report.json + frontend mock files.
+    Runs Parallel Impact Subagents -> Repair Agent -> [allowlist guardrail] ->
+    Verify Agent (with bounded retries) and writes impact_report.json + frontend
+    mock files.
+
+    NOTE: diff_input no longer has a default value. Passing no diff file is a
+    hard error now (see argparse below) instead of silently running against
+    the stale sample_diff_report.json — that silent fallback is what produced
+    the Day-2 "full_name -> name" run against the wrong (fake) data.
     """
     if isinstance(diff_input, dict):
         raw_data = diff_input
@@ -235,17 +445,16 @@ def run_orchestrator(
         raw_data = json.loads(diff_path.read_text(encoding="utf-8-sig"))
 
     if isinstance(raw_data, list):
-        raw_data = raw_data[0] if raw_data else {}
+        raw_data = merge_diff_entries(raw_data)
 
     diff_data: dict = raw_data if isinstance(raw_data, dict) else {}
 
     old_field = next(iter(diff_data.get("old_schema_fragment", {})), "unknown")
     new_field = next(iter(diff_data.get("new_schema_fragment", {})), "unknown")
-    # Prefer an explicit change_id if one was ever supplied, otherwise derive a
-    # unique one from endpoint + change_type (not old_field, since all 3 of
-    # Mahi's real diff entries per branch share the same change_type/old_field
-    # but hit different endpoints).
     change_id = diff_data.get("change_id") or make_change_id(diff_data)
+
+    print(f"\n📄 Using diff report: change_type={diff_data.get('change_type')} "
+          f"endpoint={diff_data.get('endpoint')} method={diff_data.get('method')}")
 
     # 1. Run Parallel Impact Subagents (Ask mode)
     affected_files, summary_plain_english, impact_output = run_parallel_impact_agents(
@@ -260,7 +469,7 @@ def run_orchestrator(
     findings_file = AGENTS_DIR / "latest_impact_findings.txt"
     findings_file.write_text(impact_output, encoding="utf-8")
 
-    # 2 & 3. Run Repair Agent + Verify Agent Loop (max 3 attempts)
+    # 2 & 3. Run Repair Agent + [allowlist guardrail] + Verify Agent Loop (max 3 attempts)
     repair_base_prompt = REPAIR_PROMPT_FILE.read_text(encoding="utf-8-sig")
     verify_base_prompt = VERIFY_PROMPT_FILE.read_text(encoding="utf-8-sig")
 
@@ -272,13 +481,17 @@ def run_orchestrator(
 
     for attempt in range(1, MAX_RETRIES + 1):
         print(f"\n🛠️ Step 2 (Attempt {attempt}/{MAX_RETRIES}): Running Repair Agent (Agent mode)...")
+        task_instruction = _build_task_instruction(diff_data, old_field, new_field, file_count)
         repair_prompt = (
             f"{repair_base_prompt}\n\n"
             f"Diff Report:\n{json.dumps(diff_data, indent=2)}\n\n"
             f"Affected files ({file_count} files total): {json.dumps(affected_files)}\n"
             f"Detailed findings from parallel Impact Subagents:\n{impact_output}\n\n"
-            f"Update ONLY the {file_count} files listed above from '{old_field}' to '{new_field}'. "
-            f"Do not touch any unrelated variables, formatting, or other lines in those files. "
+            f"{task_instruction}\n"
+            f"STRICT SCOPE: You may ONLY modify the files listed above. Do NOT modify any file under "
+            f"backend/app/ or backend/tests/, and do NOT modify any frontend file not in the list, even if "
+            f"it looks related. If you believe a file outside this list needs changes, STOP and report that "
+            f"instead of editing it — an automated check will revert and reject any out-of-scope edit.\n"
             f"In your patch_description, explicitly state '{file_count} files' so the count matches affected_files.\n"
             f'At the very end of your response, include a JSON block: {{"patch_description": "Brief summary of changes made"}}'
         )
@@ -295,8 +508,30 @@ def run_orchestrator(
         repair_json = extract_last_json(repair_output)
         patch_description = repair_json.get(
             "patch_description",
-            f"Updated {file_count} affected files to use '{new_field}' instead of '{old_field}'.",
+            f"Updated {file_count} affected files.",
         )
+
+        # --- NEW: allowlist guardrail, runs BEFORE Verify so a scope violation
+        # never burns a Verify call on a doomed attempt. ---
+        violations = enforce_file_allowlist(affected_files)
+        if violations:
+            print(f"\n⚠️ Repair Agent attempt {attempt} touched {len(violations)} out-of-scope "
+                  f"file(s), reverted: {violations}")
+            verify_status = "fail"
+            verify_log = (
+                f"Repair Agent modified out-of-scope files not in affected_files: {violations}. "
+                f"These have been automatically reverted. The Repair Agent must only modify the exact "
+                f"files listed in affected_files."
+            )
+            patch_applied = False
+            last_error_feedback = verify_log
+            if attempt < MAX_RETRIES:
+                print(f"\n⚠️ Scope violation on attempt {attempt}. Looping back to Repair Agent "
+                      f"(skipping Verify Agent this attempt to save Bobcoins)...")
+                continue
+            else:
+                print(f"\n❌ Max retries ({MAX_RETRIES}) reached with scope violations. Setting patch_applied = False.")
+                break
 
         # Run Verify Agent
         print(f"\n🧪 Step 3 (Attempt {attempt}/{MAX_RETRIES}): Running Verify Agent (Agent mode)...")
@@ -342,6 +577,7 @@ def run_orchestrator(
         "old_schema_fragment": diff_data.get("old_schema_fragment"),
         "new_schema_fragment": diff_data.get("new_schema_fragment"),
         "detected_at": diff_data.get("detected_at"),
+        "all_endpoints": diff_data.get("all_endpoints"),
     }
 
     # Route directly to the matching frontend mock file based on change_type
@@ -371,9 +607,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run ContractGuard Subagent Orchestrator")
     parser.add_argument(
         "diff_file",
-        nargs="?",
-        default=str(DEFAULT_DIFF_FILE),
-        help="Path to diff_report.json (defaults to sample_diff_report.json)",
+        help=(
+            "Path to a real diff_report_*.json file. REQUIRED — no default, no silent "
+            "fallback to sample_diff_report.json. This used to default silently and caused "
+            "a run against stale Day-1 sample data; that fallback has been removed."
+        ),
     )
     parser.add_argument(
         "--output",
