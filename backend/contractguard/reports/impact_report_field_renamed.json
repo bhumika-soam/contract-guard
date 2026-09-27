@@ -1,0 +1,40 @@
+{
+  "change_id": "field_renamed_api_v1_items",
+  "change_type": "field_renamed",
+  "endpoint": "/api/v1/items/",
+  "method": "POST",
+  "summary_plain_english": "The 'title' field was changed on /api/v1/items/ affecting 5 files.",
+  "severity": "high",
+  "affected_files": [
+    "frontend/src/components/Items/AddItem.tsx",
+    "frontend/src/components/Items/EditItem.tsx",
+    "frontend/src/components/Items/columns.tsx",
+    "frontend/tests/items.spec.ts",
+    "frontend/tests/utils/random.ts"
+  ],
+  "patch_applied": true,
+  "patch_description": "Updated 5 affected files.",
+  "verify_status": "pass",
+  "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: production bundle compiled cleanly (vite build succeeded in 4.13s).",
+  "old_schema_fragment": {
+    "title": "string"
+  },
+  "new_schema_fragment": {
+    "name": "string"
+  },
+  "detected_at": "2026-09-26T16:59:46.473594+00:00",
+  "all_endpoints": [
+    {
+      "endpoint": "/api/v1/items/",
+      "method": "POST"
+    },
+    {
+      "endpoint": "/api/v1/items/{id}",
+      "method": "GET"
+    },
+    {
+      "endpoint": "/api/v1/items/{id}",
+      "method": "PUT"
+    }
+  ]
+}
