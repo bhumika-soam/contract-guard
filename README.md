@@ -1,88 +1,42 @@
-# Full Stack FastAPI Template
+## What We Built
 
-[![Test Docker Compose](../../actions/workflows/test-docker-compose.yml/badge.svg)](../../actions/workflows/test-docker-compose.yml)
-[![Test Backend](../../actions/workflows/test-backend.yml/badge.svg)](../../actions/workflows/test-backend.yml)
+ContractGuard is a working, end-to-end pipeline — not a mockup. Three scripted
+"drift" branches each demonstrate a real breaking API change, caught, explained,
+patched, and verified automatically:
 
-## Technology Stack and Features
+| Scenario | Change | Endpoints affected | Files auto-patched |
+|---|---|---|---|
+| `drift/field-renamed` | `title` → `name` | 4 (list GET, POST, single GET, PUT) | 4 |
+| `drift/type-changed` | `description`: string → array | 3 | 7 |
+| `drift/endpoint-removed` | `DELETE /items/{id}` removed | — | 9 |
 
-- ⚡ [**FastAPI**](https://fastapi.tiangolo.com) for the Python backend API.
-  - 🧰 [SQLModel](https://sqlmodel.tiangolo.com) for the Python SQL database interactions (ORM).
-  - 🔍 [Pydantic](https://docs.pydantic.dev), used by FastAPI, for the data validation and settings management.
-  - 💾 [PostgreSQL](https://www.postgresql.org) as the SQL database.
-- 🚀 [React](https://react.dev) for the frontend.
-  - 🧩 Built into the backend application and served by FastAPI on the same domain as the API.
-  - 💃 Using TypeScript, hooks, [Vite](https://vitejs.dev), and other parts of a modern frontend stack.
-  - 🎨 [Tailwind CSS](https://tailwindcss.com) and [shadcn/ui](https://ui.shadcn.com) for the frontend components.
-  - 🤖 An automatically generated frontend client.
-  - 🧪 [Playwright](https://playwright.dev) for end-to-end testing.
-  - 🦇 Dark mode support.
-- ☁️ [FastAPI Cloud](https://fastapicloud.com) for deployment.
-- 🐋 [Docker Compose](https://www.docker.com) for local services and self-hosted deployment.
-  - 📞 [Traefik](https://traefik.io) as a reverse proxy with automatic HTTPS.
-- 🔒 Secure password hashing by default.
-- 🔑 JWT (JSON Web Token) authentication.
-- 📫 Email-based password recovery.
-- ✉️ [React Email](https://react.email) for email templates.
-- 📬 [Mailpit](https://mailpit.axllent.org) for local email testing during development.
-- ✅ Tests with [Pytest](https://pytest.org).
-- 🏭 CI (continuous integration) and CD (continuous deployment) based on GitHub Actions.
+**Pipeline stages, and where to find each one:**
 
-### Dashboard Login
+1. **Diff Agent** (`backend/contractguard/diff_agent.py`) — snapshots
+   `openapi.json` before/after a change, walks every endpoint's request/response
+   schema, and classifies each difference (renamed, type-changed, removed, etc.)
+   into a structured `diff_report.json` — including every endpoint a single
+   field touches, not just the first one found.
 
-![Dashboard login screenshot](img/login.png)
+2. **Orchestrator + subagents** (`backend/contractguard/orchestrator.py`,
+   `backend/contractguard/subagents/`) — three IBM Bob 2.0 subagents, run via
+   Agent mode:
+   - **Impact Agent** — searches the frontend for every real usage of the
+     changed field/endpoint (parallelized: up to 4 concurrent Bob calls across
+     candidate files, with automatic fallback to a full search).
+   - **Repair Agent** — applies the actual code patch: updated types, fixed
+     call sites, adjusted rendering.
+   - **Verify Agent** — runs the build and test suite; on failure, the error
+     is fed back into the Repair Agent for up to 3 bounded retries before the
+     pipeline honestly reports a failed patch rather than faking success.
 
-### Dashboard - Admin
+3. **Report viewer** (`frontend/src/routes/impact-report.tsx`) — renders each
+   detected break as a plain-English card: what changed, why it matters,
+   which files were touched, and whether the fix was verified — built for a
+   non-specialist (PM, junior dev) to understand at a glance, not just for
+   whoever wrote the diff tool.
 
-![Admin dashboard screenshot](img/dashboard.png)
-
-### Dashboard - Items
-
-![Items dashboard screenshot](img/dashboard-items.png)
-
-### Dashboard - Dark Mode
-
-![Dark mode dashboard screenshot](img/dashboard-dark.png)
-
-### React Email Templates
-
-![Email templates screenshot](img/react-email.png)
-
-### Mailpit - Local Email Testing
-
-![Mailpit screenshot](img/mailpit.png)
-
-### Interactive API Documentation
-
-![API docs](img/docs.png)
-
-## How to Use It
-
-Click the **Use this template** button at the top of this page to create a new repository.
-
-## Backend Development
-
-Backend docs: [backend/README.md](./backend/README.md).
-
-## Frontend Development
-
-Frontend docs: [frontend/README.md](./frontend/README.md).
-
-## Deployment
-
-FastAPI Cloud deployment: [deployment.md](./deployment.md).
-
-Self-hosted deployment with Docker Compose: [deployment-docker-compose.md](./deployment-docker-compose.md).
-
-## Development
-
-General development docs: [development.md](./development.md).
-
-This includes the local FastAPI and Vite workflow, Docker Compose services, `.env` configuration, and more.
-
-## Release Notes
-
-Check the file [release-notes.md](./release-notes.md).
-
-## License
-
-The Full Stack FastAPI Template is licensed under the terms of the MIT license.
+**IBM Bob 2.0 evidence:** task-session screenshots from all three team
+members are in `evidence/bob-task-sessions/`. See
+`docs/bob-usage-statement.md` for a full breakdown of where and how Bob's
+Agent mode, subagents, and parallel tasks were used.
