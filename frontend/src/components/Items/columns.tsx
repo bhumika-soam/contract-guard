@@ -38,10 +38,17 @@ export const columns: ColumnDef<ItemPublic>[] = [
     cell: ({ row }) => <CopyId id={row.original.id} />,
   },
   {
+<<<<<<< HEAD
     accessorKey: "name",
     header: "Title",
     cell: ({ row }) => (
       <span className="font-medium">{row.original.name}</span>
+=======
+    accessorKey: "title",
+    header: "Title",
+    cell: ({ row }) => (
+      <span className="font-medium">{row.original.title}</span>
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
     ),
   },
   {

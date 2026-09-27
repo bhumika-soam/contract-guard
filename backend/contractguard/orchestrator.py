@@ -159,26 +159,17 @@ def extract_last_json(text: str) -> dict:
             continue
     return {}
 
-def _derive_search_token(old_field: str, endpoint: str, change_type: str = "") -> str:
+
+def _derive_search_token(old_field: str, endpoint: str) -> str:
     """Picks a meaningful literal substring to grep for across the frontend.
 
-    FIX: for endpoint_removed, old_field is NEVER a useful search token —
-    Mahi's diff_agent.py sets old_schema_fragment to the entire old response
-    body (e.g. {"message": "string"}), so old_field is some unrelated
-    response field name, not the endpoint's resource name. The previous
-    check (`old_field != "unknown"`) never caught this, since old_field is
-    never literally "unknown" for this change_type. endpoint_removed must
-    ALWAYS use the endpoint-path-derived token, regardless of old_field.
-
-    For every other change_type, old_field (when present) is still the most
-    precise literal token to search for.
+    FIX: the old fallback (`endpoint.strip("/").split("/")[0]`) picked the
+    FIRST path segment, which for a real endpoint like "/api/v1/items/{id}"
+    is just "api" — a near-useless, overly generic token. This now skips
+    generic prefix segments (api/v1/v2...) and path-parameter segments
+    ("{id}") to find the actual resource name ("items").
     """
-    use_endpoint_fallback = (
-        change_type == "endpoint_removed"
-        or not old_field
-        or old_field == "unknown"
-    )
-    if not use_endpoint_fallback:
+    if old_field and old_field != "unknown":
         return old_field
     segments = [s for s in endpoint.strip("/").split("/") if s and not s.startswith("{")]
     meaningful = [s for s in segments if s.lower() not in GENERIC_PATH_SEGMENTS]
@@ -187,7 +178,7 @@ def _derive_search_token(old_field: str, endpoint: str, change_type: str = "") -
     return segments[0] if segments else ""
 
 
-def find_candidate_frontend_files(old_field: str, endpoint: str, change_type: str = "") -> list[str]:
+def find_candidate_frontend_files(old_field: str, endpoint: str) -> list[str]:
     """Finds candidate frontend files referencing the changed field or endpoint to scan in parallel.
 
     FIX: now scans the ENTIRE `frontend/` tree (src, tests, everything),
@@ -203,7 +194,7 @@ def find_candidate_frontend_files(old_field: str, endpoint: str, change_type: st
         return []
 
     excluded_path_fragments = ("node_modules", "/dist/", "/build/", "mocks/impact-reports")
-    search_token = _derive_search_token(old_field, endpoint, change_type)
+    search_token = _derive_search_token(old_field, endpoint)
     if not search_token:
         return []
 
@@ -226,8 +217,23 @@ def find_candidate_frontend_files(old_field: str, endpoint: str, change_type: st
 
 def analyze_single_file_impact(
     rel_file: str, diff_data: dict, impact_base_prompt: str
-) -> tuple[str, bool, str]:
-    """Subagent worker: runs Impact Agent on a single candidate file concurrently."""
+) -> tuple[str, bool, str, bool]:
+    """Subagent worker: runs Impact Agent on a single candidate file concurrently.
+
+    FIX: previously defaulted `is_affected` to True whenever the subagent's
+    response couldn't be parsed as JSON — which silently treated a BLOCKED,
+    REFUSED, or otherwise failed subagent call as a confirmed affected file.
+    A real run's latest_impact_findings.txt showed exactly this: all 20
+    parallel subagents were blocked reading their own prompt file (pre-dating
+    the tempfile fix) and returned zero valid is_affected JSON, yet every one
+    still ended up marked affected — explaining why over-broad, unrelated
+    files (shadcn UI primitives, Sidebar, signup/login pages) showed up in
+    impact_report.json's affected_files. Failure must default to NOT
+    affected, and be reported distinctly so it's visible in the console
+    instead of silently masquerading as a confirmed result.
+
+    Returns (rel_file, is_affected, section_output, subagent_ok).
+    """
     file_prompt = (
         f"{impact_base_prompt}\n\n"
         f"PARALLEL SUBAGENT TASK: Inspect ONLY the file `{rel_file}`.\n"
@@ -241,10 +247,22 @@ def analyze_single_file_impact(
     output = run_bob(file_prompt, mode="ask", task_label=f"impact_{label}")
     parsed = extract_last_json(output)
 
-    # Default to True if Bob found usages in the candidate file
-    is_affected = bool(parsed.get("is_affected", True))
+    if not parsed:
+        # Subagent failed to return the expected JSON at all (blocked,
+        # refused, errored, or malformed). Fail SAFE: do not count this as
+        # affected. Flag it distinctly so a human can spot-check the file.
+        return (
+            rel_file,
+            False,
+            f"### File: {rel_file}\n"
+            f"⚠️ SUBAGENT FAILED — no parseable is_affected JSON returned. "
+            f"Treated as NOT affected by default; check this file manually.\n{output}",
+            False,
+        )
+
+    is_affected = bool(parsed.get("is_affected", False))
     line_summary = parsed.get("line_summary", "")
-    return rel_file, is_affected, f"### File: {rel_file}\n{line_summary}\n{output}"
+    return rel_file, is_affected, f"### File: {rel_file}\n{line_summary}\n{output}", True
 
 
 def run_parallel_impact_agents(
@@ -257,8 +275,7 @@ def run_parallel_impact_agents(
     """
     impact_base_prompt = IMPACT_PROMPT_FILE.read_text(encoding="utf-8-sig")
     endpoint = str(diff_data.get("endpoint", ""))
-    change_type = str(diff_data.get("change_type", ""))
-    candidates = find_candidate_frontend_files(old_field, endpoint, change_type)
+    candidates = find_candidate_frontend_files(old_field, endpoint)
 
     if candidates:
         print(
@@ -281,11 +298,13 @@ def run_parallel_impact_agents(
             for future in as_completed(future_to_file):
                 rel_file = future_to_file[future]
                 try:
-                    file_path, is_affected, section_output = future.result()
+                    file_path, is_affected, section_output, subagent_ok = future.result()
                     if is_affected:
                         affected_files.append(file_path)
                         combined_sections.append(section_output)
                         print(f"   ✅ Subagent confirmed impact in: {file_path}")
+                    elif not subagent_ok:
+                        print(f"   ❌ Subagent FAILED (no valid result) on: {file_path} — excluded, check manually")
                     else:
                         print(f"   ➖ Subagent cleared (not affected): {file_path}")
                 except Exception as exc:

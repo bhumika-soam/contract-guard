@@ -1,10 +1,55 @@
+<<<<<<< HEAD
 .vscode/*
 !.vscode/extensions.json
 node_modules/
 backend/app/frontend/
+=======
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Databases & Local Data
+*.db
+*.sqlite
+*.sqlite3
+
+# VS Code Settings
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# Node & Frontend Dependencies
+node_modules/
+backend/app/frontend/
+dist/
+build/
+.next/
+
+# Testing & Playwright Reports
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+<<<<<<< HEAD
 .env
 *.db
+=======
+coverage/
+.pytest_cache/
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.egg-info/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567

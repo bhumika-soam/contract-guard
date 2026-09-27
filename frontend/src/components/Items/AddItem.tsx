@@ -31,7 +31,11 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 const formSchema = z.object({
+<<<<<<< HEAD
   name: z.string().min(1, { message: "Title is required" }),
+=======
+  title: z.string().min(1, { message: "Title is required" }),
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
   description: z.string().optional(),
 })
 
@@ -47,7 +51,11 @@ const AddItem = () => {
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
+<<<<<<< HEAD
       name: "",
+=======
+      title: "",
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
       description: "",
     },
   })
@@ -89,7 +97,11 @@ const AddItem = () => {
             <div className="grid gap-4 py-4">
               <FormField
                 control={form.control}
+<<<<<<< HEAD
                 name="name"
+=======
+                name="title"
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>

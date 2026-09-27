@@ -49,15 +49,9 @@ export type HTTPValidationError = {
  */
 export type ItemCreate = {
     /**
-<<<<<<< HEAD
-     * Name
-     */
-    name: string;
-=======
      * Title
      */
     title: string;
->>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
     /**
      * Description
      */
@@ -69,15 +63,9 @@ export type ItemCreate = {
  */
 export type ItemPublic = {
     /**
-<<<<<<< HEAD
-     * Name
-     */
-    name: string;
-=======
      * Title
      */
     title: string;
->>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
     /**
      * Description
      */
@@ -101,15 +89,9 @@ export type ItemPublic = {
  */
 export type ItemUpdate = {
     /**
-<<<<<<< HEAD
-     * Name
-     */
-    name?: string | null;
-=======
      * Title
      */
     title?: string | null;
->>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
     /**
      * Description
      */

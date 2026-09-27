@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "change_id": "field_renamed_api_v1_items",
   "change_type": "field_renamed",
   "endpoint": "/api/v1/items/",
@@ -33,9 +34,37 @@
   "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: production bundle compiled cleanly in 1.04s.",
   "old_schema_fragment": {
     "title": "string"
+=======
+  "change_id": "field_renamed_full_name",
+  "change_type": "field_renamed",
+  "endpoint": "/items/{id}",
+  "method": "GET",
+  "summary_plain_english": "The 'full_name' field was renamed to 'name' on /items/{id} across 8 files. Any frontend code reading .full_name will now get undefined.",
+  "severity": "high",
+  "affected_files": [
+    "frontend/src/client/types.gen.ts",
+    "frontend/src/components/Admin/AddUser.tsx",
+    "frontend/src/components/Admin/EditUser.tsx",
+    "frontend/src/components/Admin/columns.tsx",
+    "frontend/src/components/Sidebar/User.tsx",
+    "frontend/src/components/UserSettings/UserInformation.tsx",
+    "frontend/src/routes/_layout/index.tsx",
+    "frontend/src/routes/signup.tsx"
+  ],
+  "patch_applied": true,
+  "patch_description": "Updated 8 affected files to use 'name' instead of 'full_name'.",
+  "verify_status": "pass",
+  "verify_log": "bunx tsc --noEmit: 0 errors (type contract verified). bun run build: production bundle compiled cleanly.",
+  "old_schema_fragment": {
+    "full_name": "string"
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
   },
   "new_schema_fragment": {
     "name": "string"
   },
+<<<<<<< HEAD
   "detected_at": "2026-09-26T16:59:46.473594+00:00"
+=======
+  "detected_at": "2026-09-26T13:00:00Z"
+>>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
 }
