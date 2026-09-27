@@ -2,28 +2,31 @@
   "change_id": "field_renamed_api_v1_items",
   "change_type": "field_renamed",
   "endpoint": "/api/v1/items/",
-  "method": "POST",
-  "summary_plain_english": "The 'title' field was changed on /api/v1/items/ affecting 5 files.",
+  "method": "GET",
+  "summary_plain_english": "The 'title' field was renamed to 'name' on /api/v1/items/ affecting 4 files.",
   "severity": "high",
   "affected_files": [
     "frontend/src/components/Items/AddItem.tsx",
     "frontend/src/components/Items/EditItem.tsx",
-    "frontend/src/components/Items/columns.tsx",
-    "frontend/tests/items.spec.ts",
-    "frontend/tests/utils/random.ts"
+    "frontend/src/routes/_layout/items.tsx",
+    "frontend/tests/items.spec.ts"
   ],
   "patch_applied": true,
-  "patch_description": "Updated 5 affected files.",
+  "patch_description": "Repaired 4 files for the title\u2192name field rename on GET /api/v1/items/: AddItem.tsx, EditItem.tsx, and items.tsx were already using 'name' and required no changes; items.spec.ts had stale local variables (title, itemTitle, updatedTitle) referencing the old field name \u2014 these were renamed to name, itemName, and updatedName throughout the test file.",
   "verify_status": "pass",
-  "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: production bundle compiled cleanly (vite build succeeded in 4.13s).",
+  "verify_log": "tsc --noEmit: 0 errors (type contract verified). npm run build: vite build succeeded in 2.17s, production bundle compiled cleanly.",
   "old_schema_fragment": {
     "title": "string"
   },
   "new_schema_fragment": {
     "name": "string"
   },
-  "detected_at": "2026-09-26T16:59:46.473594+00:00",
+  "detected_at": "2026-09-27T09:48:48.593020+00:00",
   "all_endpoints": [
+    {
+      "endpoint": "/api/v1/items/",
+      "method": "GET"
+    },
     {
       "endpoint": "/api/v1/items/",
       "method": "POST"

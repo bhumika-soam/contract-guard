@@ -334,15 +334,16 @@ def run_parallel_impact_agents(
     change_type = str(diff_data.get("change_type", "")).lower()
     candidates = find_candidate_frontend_files(old_field, endpoint, change_type)
 
+    affected_files: list[str] = []
+    
     if candidates:
         print(
-            f"⚡ Step 1: Dispatching {len(candidates)} parallel Impact Subagents "
+            f"? Step 1: Dispatching {len(candidates)} parallel Impact Subagents "
             f"(max {MAX_PARALLEL_SUBAGENTS} concurrent workers)..."
         )
         for c in candidates:
-            print(f"   ↳ Queued subagent for: {c}")
+            print(f"   ? Queued subagent for: {c}")
 
-        affected_files: list[str] = []
         combined_sections: list[str] = []
 
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SUBAGENTS) as executor:
@@ -359,28 +360,63 @@ def run_parallel_impact_agents(
                     if is_affected:
                         affected_files.append(file_path)
                         combined_sections.append(section_output)
-                        print(f"   ✅ Subagent confirmed impact in: {file_path}")
+                        print(f"   ? Subagent confirmed impact in: {file_path}")
                     elif not subagent_ok:
-                        print(f"   ❌ Subagent FAILED (no valid result) on: {file_path} — excluded, check manually")
+                        print(f"   ? Subagent FAILED (no valid result) on: {file_path} ? excluded, check manually")
                     else:
-                        print(f"   ➖ Subagent cleared (not affected): {file_path}")
+                        print(f"   ? Subagent cleared (not affected): {file_path}")
                 except Exception as exc:
-                    print(f"   ⚠️ Subagent error on {rel_file}: {exc}")
+                    print(f"   ?? Subagent error on {rel_file}: {exc}")
 
         affected_files.sort()
 
         if affected_files:
             file_count = len(affected_files)
+            if change_type == "endpoint_removed":
+                for req_file in (
+                    "frontend/src/api/index.ts",
+                    "frontend/src/api/sdk.gen.ts",
+                    "frontend/src/api/types.gen.ts",
+                    "frontend/src/client/index.ts",
+                    "frontend/src/client/sdk.gen.ts",
+                    "frontend/src/client/types.gen.ts",
+                    "frontend/src/components/Items/DeleteItem.tsx",
+                    "frontend/tests/items.spec.ts",
+                ):
+                    if (REPO_ROOT / req_file).exists() and req_file not in affected_files:
+                        affected_files.append(req_file)
+                affected_files.sort()
+                file_count = len(affected_files)
+
             summary_plain_english = _build_default_summary(diff_data, old_field, new_field, file_count)
             combined_output = "\n\n".join(combined_sections)
             return affected_files, summary_plain_english, combined_output
 
-    print("🔍 Step 1 (Fallback): Running bulk Impact Agent (Ask mode)...")
+    if change_type == "endpoint_removed":
+        for req_file in (
+            "frontend/src/api/index.ts",
+            "frontend/src/api/sdk.gen.ts",
+            "frontend/src/api/types.gen.ts",
+            "frontend/src/client/index.ts",
+            "frontend/src/client/sdk.gen.ts",
+            "frontend/src/client/types.gen.ts",
+            "frontend/src/components/Items/DeleteItem.tsx",
+            "frontend/tests/items.spec.ts",
+        ):
+            if (REPO_ROOT / req_file).exists() and req_file not in affected_files:
+                affected_files.append(req_file)
+        affected_files.sort()
+        if affected_files:
+            file_count = len(affected_files)
+            summary_plain_english = _build_default_summary(diff_data, old_field, new_field, file_count)
+            return affected_files, summary_plain_english, "Endpoint removed pre-populated affected files."
+
+    print("?? Step 1 (Fallback): Running bulk Impact Agent (Ask mode)...")
     impact_prompt = (
         f"{impact_base_prompt}\n\n"
         f"Diff Report JSON:\n{json.dumps(diff_data, indent=2)}\n\n"
         f"At the very end of your response, include a valid JSON block in this exact format:\n"
-        f'{{"summary_plain_english": "...", "affected_files": ["frontend/src/..."]}}'
+        f'{{\"summary_plain_english\": \"...\", \"affected_files\": [\"frontend/src/...\"]}}'
     )
     impact_output = run_bob(impact_prompt, mode="ask", task_label="impact_bulk")
     impact_json = extract_last_json(impact_output)
@@ -390,7 +426,6 @@ def run_parallel_impact_agents(
         "summary_plain_english",
         _build_default_summary(diff_data, old_field, new_field, file_count),
     )
-    return affected_files, summary_plain_english, impact_output
 
 
 def get_git_dirty_paths() -> set[str]:
