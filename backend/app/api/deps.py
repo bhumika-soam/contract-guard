@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 import uuid
->>>>>>> 324c35a5700f2f0c8283ec0c1f7257c3809c1567
 from collections.abc import Generator
 from typing import Annotated
 
