@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 
 # orchestrator.py is in backend/contractguard/, so prompts live in ./agents/
@@ -26,9 +27,6 @@ if ENV_FILE.exists():
 # NOTE: sample_diff_report.json is kept ONLY as a reference/example for manual
 # testing. It is intentionally NEVER used as a silent default anymore — see the
 # argparse setup at the bottom, where diff_file is now a REQUIRED argument.
-# (Root cause of the Day-2 "full_name -> name" run: this constant used to be
-# argparse's silent default, so an invocation without the path argument quietly
-# ran against stale Day-1 sample data instead of a real diff_report_*.json.)
 SAMPLE_DIFF_FILE_FOR_REFERENCE_ONLY = AGENTS_DIR / "sample_diff_report.json"
 IMPACT_PROMPT_FILE = AGENTS_DIR / "impact_agent_prompt.md"
 REPAIR_PROMPT_FILE = AGENTS_DIR / "repair_agent_prompt.md"
@@ -36,21 +34,16 @@ VERIFY_PROMPT_FILE = AGENTS_DIR / "verify_agent_prompt.md"
 DEFAULT_OUTPUT_FILE = AGENTS_DIR / "impact_report.json"
 
 MAX_RETRIES = 3
+SUBAGENT_CMD_RETRIES = 2
 MAX_PARALLEL_SUBAGENTS = 4  # Bounds concurrent Bob CLI processes
 
 # FIX A: prompt files must live INSIDE the Bob workspace (REPO_ROOT), not the
 # OS temp dir. Bob CLI enforces a workspace boundary and refuses to read
-# anything outside it ("the file is outside the workspace boundary") -- this
-# is what silently broke every Repair/Verify/Impact-subagent call in the Day-2
-# run, since run_bob() was writing to tempfile.gettempdir(). This folder must
-# NOT match .bobignore's `_current_prompt*.md` pattern (that was the earlier,
-# different bug) -- the "contractguard_prompt_*.md" filename already avoids
-# that, so simply relocating it here satisfies both constraints at once.
+# anything outside it ("the file is outside the workspace boundary").
 TMP_PROMPT_DIR = AGENTS_DIR / "tmp_prompts"
 TMP_PROMPT_REL_PREFIX = TMP_PROMPT_DIR.relative_to(REPO_ROOT).as_posix() + "/"
 
 # Path segments too generic to use as a candidate-file search token on their own
-# (e.g. "/api/v1/items/{id}" should search for "items", not "api").
 GENERIC_PATH_SEGMENTS = {"api", "v1", "v2", "v3"}
 
 
@@ -63,13 +56,6 @@ def merge_diff_entries(entries: list[dict]) -> dict:
     """Collapses multiple diff_report entries describing the SAME underlying
     breaking change (same change_type + same old/new schema fragment) into one
     diff_data dict with an `all_endpoints` list.
-
-    RESTORED FIX: Mahi's real diff_report_*.json files are JSON arrays — e.g.
-    field-renamed and type-changed each contain 3 entries (POST/GET/PUT on the
-    same field). Without this, the pipeline kept only entries[0] and silently
-    dropped the other two (this was previously fixed and logged as bug #5 in
-    khushi-day1-log.md, but the fix is not present in the file that was
-    uploaded here — this restores it).
     """
     if not entries:
         return {}
@@ -102,22 +88,14 @@ def merge_diff_entries(entries: list[dict]) -> dict:
     ]
     return merged
 
-
-def run_bob(prompt: str, mode: str, task_label: str = "main") -> str:
-    """Thread-safe Bob CLI runner using a unique prompt file per subagent call.
-
-    FIX A (this session): the OS temp dir (tempfile.gettempdir()) sits OUTSIDE
-    the Bob workspace boundary (REPO_ROOT), and current Bob CLI refuses to
-    read any path outside it -- this is exactly what broke every Impact/
-    Repair/Verify call in the Day-2 run ("the file is outside the workspace
-    boundary"). The earlier fix (see below) correctly solved a DIFFERENT
-    problem -- .bobignore blocking `_current_prompt*.md` inside the repo --
-    but moved the file too far, past the workspace boundary entirely. Writing
-    to TMP_PROMPT_DIR (inside REPO_ROOT, filename still "contractguard_prompt_
-    *.md" so it still avoids the .bobignore pattern) satisfies both fixes at
-    once. TMP_PROMPT_DIR should be added to .gitignore and .bobignore so its
-    contents are never committed or treated as candidate source files.
-    """
+def run_bob(
+    prompt: str,
+    mode: str,
+    task_label: str = "main",
+    allow_failure: bool = False,
+    max_attempts: int = SUBAGENT_CMD_RETRIES,
+) -> str:
+    """Thread-safe Bob CLI runner using a unique prompt file per subagent call."""
     bob_path = shutil.which("bob")
     if not bob_path:
         print("❌ Error: 'bob' CLI not found in PATH.")
@@ -133,32 +111,44 @@ def run_bob(prompt: str, mode: str, task_label: str = "main") -> str:
     )
 
     cmd = [bob_path, "run", "--accept-license", "--mode", mode, short_instruction]
+    result: subprocess.CompletedProcess[str] | None = None
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            env=os.environ.copy(),
-        )
+        for attempt in range(1, max(1, max_attempts) + 1):
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                env=os.environ.copy(),
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+
+            if attempt < max_attempts:
+                print(
+                    f"   ⚠️ Bob CLI [{task_label}] failed (exit code {result.returncode}, "
+                    f"attempt {attempt}/{max_attempts}). Retrying in 2s..."
+                )
+                time.sleep(2)
     finally:
-        # Clean up temporary prompt file so temp dir stays clean
         if prompt_file.exists():
             try:
                 prompt_file.unlink()
             except OSError:
                 pass
 
-    if result.returncode != 0:
-        print(f"\n❌ Bob CLI [{task_label}] exited with code {result.returncode}")
-        print("--- STDOUT ---")
-        print(result.stdout)
-        print("--- STDERR ---")
-        print(result.stderr)
-        sys.exit(1)
+    assert result is not None
+    print(f"\n❌ Bob CLI [{task_label}] exited with code {result.returncode}")
+    if allow_failure:
+        err_snippet = (result.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
+        print(f"   ⚠️ Continuing without [{task_label}] ({err_snippet[0]})")
+        return ""
 
-    return result.stdout.strip()
-
+    print("--- STDOUT ---")
+    print(result.stdout)
+    print("--- STDERR ---")
+    print(result.stderr)
+    sys.exit(1)
 
 def extract_last_json(text: str) -> dict:
     """Extracts the last valid JSON object from Bob's CLI output, fixing 120-char line wraps."""
@@ -176,14 +166,7 @@ def extract_last_json(text: str) -> dict:
 
 
 def _derive_search_token(old_field: str, endpoint: str) -> str:
-    """Picks a meaningful literal substring to grep for across the frontend.
-
-    FIX: the old fallback (`endpoint.strip("/").split("/")[0]`) picked the
-    FIRST path segment, which for a real endpoint like "/api/v1/items/{id}"
-    is just "api" — a near-useless, overly generic token. This now skips
-    generic prefix segments (api/v1/v2...) and path-parameter segments
-    ("{id}") to find the actual resource name ("items").
-    """
+    """Picks a meaningful literal substring to grep for across the frontend."""
     if old_field and old_field != "unknown":
         return old_field
     segments = [s for s in endpoint.strip("/").split("/") if s and not s.startswith("{")]
@@ -194,21 +177,19 @@ def _derive_search_token(old_field: str, endpoint: str) -> str:
 
 
 def find_candidate_frontend_files(old_field: str, endpoint: str) -> list[str]:
-    """Finds candidate frontend files referencing the changed field or endpoint to scan in parallel.
-
-    FIX: now scans the ENTIRE `frontend/` tree (src, tests, everything),
-    not just `frontend/src`. The Day-2 endpoint-removed run's real breaking
-    references lived in `frontend/tests/user-settings.spec.ts` and
-    `frontend/tests/utils/privateApi.ts` — outside the old scan root — so
-    they were structurally invisible to the Impact Agent no matter what the
-    diff report said. node_modules/dist/build output and the mock-report
-    output folder are excluded so we don't scan generated or irrelevant files.
-    """
+    """Finds candidate frontend files referencing the changed field or endpoint to scan in parallel."""
     frontend_root = REPO_ROOT / "frontend"
     if not frontend_root.exists():
         return []
 
-    excluded_path_fragments = ("node_modules", "/dist/", "/build/", "mocks/impact-reports")
+    excluded_path_fragments = (
+        "node_modules",
+        "/dist/",
+        "/build/",
+        "mocks/impact-reports",
+        "components/ui/",
+        "routes/impact-report",
+    )
     search_token = _derive_search_token(old_field, endpoint)
     if not search_token:
         return []
@@ -230,42 +211,57 @@ def find_candidate_frontend_files(old_field: str, endpoint: str) -> list[str]:
     return candidates
 
 
+def _read_numbered_file(rel_file: str) -> str:
+    """Reads a repo-relative file and prefixes each line with its 1-based line number."""
+    target = REPO_ROOT / rel_file
+    try:
+        lines = target.read_text(encoding="utf-8-sig").splitlines()
+        return "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines))
+    except OSError as exc:
+        return f"(Could not read {rel_file}: {exc})"
+
+
 def analyze_single_file_impact(
     rel_file: str, diff_data: dict, impact_base_prompt: str
 ) -> tuple[str, bool, str, bool]:
     """Subagent worker: runs Impact Agent on a single candidate file concurrently.
 
-    FIX: previously defaulted `is_affected` to True whenever the subagent's
-    response couldn't be parsed as JSON — which silently treated a BLOCKED,
-    REFUSED, or otherwise failed subagent call as a confirmed affected file.
-    A real run's latest_impact_findings.txt showed exactly this: all 20
-    parallel subagents were blocked reading their own prompt file (pre-dating
-    the tempfile fix) and returned zero valid is_affected JSON, yet every one
-    still ended up marked affected — explaining why over-broad, unrelated
-    files (shadcn UI primitives, Sidebar, signup/login pages) showed up in
-    impact_report.json's affected_files. Failure must default to NOT
-    affected, and be reported distinctly so it's visible in the console
-    instead of silently masquerading as a confirmed result.
-
-    Returns (rel_file, is_affected, section_output, subagent_ok).
+    Embeds the numbered file contents directly in the prompt and forbids repo-wide
+    `grep`/`glob` searches or file writes so the subagent finishes in a single turn
+    inside `ask` mode without hitting tool-call loops.
     """
+    numbered_content = _read_numbered_file(rel_file)
+    endpoint = diff_data.get("endpoint", "")
+    change_type = diff_data.get("change_type", "")
+
     file_prompt = (
-        f"{impact_base_prompt}\n\n"
-        f"PARALLEL SUBAGENT TASK: Inspect ONLY the file `{rel_file}`.\n"
-        f"Determine if `{rel_file}` uses the changed contract field/endpoint from this Diff Report, "
-        f"and list the exact line numbers and code context where it appears.\n\n"
+        f"You are a fast, read-only ContractGuard Impact Subagent inspecting ONE specific file: `{rel_file}`.\n\n"
+        f"CRITICAL EXECUTION RULES (READ CAREFULLY):\n"
+        f"1. You are running in read-only Ask mode. Do NOT attempt to write, edit, or create any files.\n"
+        f"2. Do NOT call `grep`, `glob`, or `read_file` on any other file in the repository. "
+        f"The complete numbered source code of `{rel_file}` is already provided below.\n"
+        f"3. Mark `\"is_affected\": true` ONLY if `{rel_file}` actually uses, passes, renders, validates, or tests "
+        f"the affected API contract field/endpoint described in the Diff Report below (specifically related to "
+        f"`{endpoint}` / `{change_type}`).\n"
+        f"4. Mark `\"is_affected\": false` if the word only appears in unrelated contexts (e.g., sidebar navigation "
+        f"link labels like `title: 'Items'`, page/dialog headers, HTML title attributes, or unrelated endpoints/models "
+        f"such as Admin/User).\n\n"
         f"Diff Report JSON:\n{json.dumps(diff_data, indent=2)}\n\n"
-        f"At the very end of your response, include a valid JSON block in this exact format:\n"
+        f"Contents of `{rel_file}` (with line numbers):\n"
+        f"```tsx\n{numbered_content}\n```\n\n"
+        f"Respond concisely and end your response with ONLY this valid JSON block:\n"
         f'{{"is_affected": true, "file": "{rel_file}", "line_summary": "Exact lines and usage details"}}'
     )
     label = pathlib.Path(rel_file).stem
-    output = run_bob(file_prompt, mode="ask", task_label=f"impact_{label}")
+    output = run_bob(
+        file_prompt,
+        mode="ask",
+        task_label=f"impact_{label}",
+        allow_failure=True,
+    )
     parsed = extract_last_json(output)
 
     if not parsed:
-        # Subagent failed to return the expected JSON at all (blocked,
-        # refused, errored, or malformed). Fail SAFE: do not count this as
-        # affected. Flag it distinctly so a human can spot-check the file.
         return (
             rel_file,
             False,
@@ -359,17 +355,6 @@ def run_parallel_impact_agents(
 def get_git_dirty_paths() -> set[str]:
     """Returns the set of paths `git status --porcelain` currently reports as
     changed, normalized to forward-slash paths relative to REPO_ROOT.
-
-    Used by Fix D (see enforce_file_allowlist) to snapshot "already dirty
-    before this run started" state, so the allowlist guardrail can tell that
-    apart from "the Repair Agent just changed this." Without this, on a
-    working tree that already has uncommitted changes (e.g. your own
-    in-progress fixes to orchestrator.py, .gitignore, .bobignore) sitting
-    there when the pipeline starts, `enforce_file_allowlist` had no way to
-    know those predated the run -- it reverted them as "out-of-scope Repair
-    Agent edits," which is exactly what happened on 2026-09-27: the fixed
-    orchestrator.py, .gitignore and .bobignore were all silently
-    `git checkout --`'d back to their last-committed (pre-fix) state.
     """
     try:
         result = subprocess.run(
@@ -393,25 +378,7 @@ def get_git_dirty_paths() -> set[str]:
 
 def enforce_file_allowlist(affected_files: list[str], baseline_dirty: set[str]) -> list[str]:
     """Reverts any file the Repair Agent touched that wasn't in affected_files
-    AND wasn't already dirty before this run started (Fix D -- see
-    get_git_dirty_paths above for why the baseline_dirty exclusion exists).
-
-    NEW GUARDRAIL. Zero Bobcoin cost — pure git/python, runs after Repair
-    Agent and before Verify Agent. If the agent edited anything outside the
-    Impact Agent's approved file list (e.g. backend/app/, backend/tests/, or
-    an unrelated frontend component), those specific files are reverted (or,
-    if newly created, deleted) in place, and the violation is reported so the
-    caller can treat the attempt as failed WITHOUT spending a Verify call
-    on a doomed run.
-
-    Uses `git status --porcelain` rather than `git diff --name-only`: the
-    latter only shows changes to files git already tracks, so a Repair Agent
-    that CREATES a new out-of-scope file would slip past it entirely.
-    `--porcelain` also reports untracked (`??`) files, which are handled by
-    deletion rather than `git checkout --` (checkout can't restore a file
-    that was never tracked).
-
-    Returns the list of out-of-scope files that were found and reverted.
+    AND wasn't already dirty before this run started.
     """
     try:
         result = subprocess.run(
@@ -432,16 +399,6 @@ def enforce_file_allowlist(affected_files: list[str], baseline_dirty: set[str]) 
             path_part = path_part.split("->")[-1].strip().strip('"')
         changed.append((status_code, path_part.replace("\\", "/")))
 
-    # FIX C: the orchestrator writes its own housekeeping files every run
-    # (latest_impact_findings.txt before Repair even starts) regardless of
-    # how many files Impact found. When affected_files is empty -- as
-    # happened when every Impact subagent failed -- `allowed` was also
-    # empty, so the orchestrator's OWN write got flagged and reverted as an
-    # "out-of-scope Repair Agent edit," which it never was. Whitelist these
-    # explicitly so a real scope violation isn't confused with our own
-    # bookkeeping, and exclude the tmp-prompt dir as a belt-and-braces check
-    # (its files are deleted immediately after each run_bob call, but this
-    # guards against any left behind by an interrupted run).
     orchestrator_owned = {
         (AGENTS_DIR / "latest_impact_findings.txt").relative_to(REPO_ROOT).as_posix(),
         (AGENTS_DIR / "impact_report.json").relative_to(REPO_ROOT).as_posix(),
@@ -461,7 +418,6 @@ def enforce_file_allowlist(affected_files: list[str], baseline_dirty: set[str]) 
             continue
         try:
             if status_code.strip() == "??":
-                # Untracked new file — nothing for git to revert to, so delete it.
                 target = REPO_ROOT / path
                 if target.exists():
                     target.unlink()
@@ -474,14 +430,7 @@ def enforce_file_allowlist(affected_files: list[str], baseline_dirty: set[str]) 
 
 
 def _build_task_instruction(diff_data: dict, old_field: str, new_field: str, file_count: int) -> str:
-    """Change-type-aware Repair Agent instructions.
-
-    FIX: the old prompt always said "rename '{old_field}' to '{new_field}'"
-    no matter what actually happened — actively misleading for
-    field_type_changed (same name, new type) and endpoint_removed (no field
-    mapping at all, an endpoint disappeared). This was already flagged as an
-    open risk in khushi-day1-log.md before branch B/C were ever run for real.
-    """
+    """Change-type-aware Repair Agent instructions."""
     change_type = str(diff_data.get("change_type", "")).lower()
 
     if change_type == "field_renamed":
@@ -521,11 +470,6 @@ def run_orchestrator(
     Runs Parallel Impact Subagents -> Repair Agent -> [allowlist guardrail] ->
     Verify Agent (with bounded retries) and writes impact_report.json + frontend
     mock files.
-
-    NOTE: diff_input no longer has a default value. Passing no diff file is a
-    hard error now (see argparse below) instead of silently running against
-    the stale sample_diff_report.json — that silent fallback is what produced
-    the Day-2 "full_name -> name" run against the wrong (fake) data.
     """
     if isinstance(diff_input, dict):
         raw_data = diff_input
@@ -548,9 +492,6 @@ def run_orchestrator(
     print(f"\n📄 Using diff report: change_type={diff_data.get('change_type')} "
           f"endpoint={diff_data.get('endpoint')} method={diff_data.get('method')}")
 
-    # Fix D: snapshot what's already dirty BEFORE touching anything, so the
-    # allowlist guardrail later can tell "pre-existing uncommitted work" apart
-    # from "the Repair Agent just changed this."
     baseline_dirty = get_git_dirty_paths()
     if baseline_dirty:
         print(
@@ -617,8 +558,6 @@ def run_orchestrator(
             f"Updated {file_count} affected files.",
         )
 
-        # --- NEW: allowlist guardrail, runs BEFORE Verify so a scope violation
-        # never burns a Verify call on a doomed attempt. ---
         violations = enforce_file_allowlist(affected_files, baseline_dirty)
         if violations:
             print(f"\n⚠️ Repair Agent attempt {attempt} touched {len(violations)} out-of-scope "
@@ -649,16 +588,6 @@ def run_orchestrator(
         verify_status = str(verify_json.get("verify_status", "")).lower()
         verify_log = verify_json.get("verify_log", verify_output)
 
-        # FIX B: fail-safe default. Previously, if Bob's response had no
-        # explicit {"verify_status": ...} JSON block, this defaulted to
-        # "pass" unless the literal substring "error ts" appeared anywhere
-        # in the output -- so a Verify Agent that never ran tsc/the build at
-        # all (e.g. blocked from reading its own prompt file, refused, or
-        # errored before touching the codebase) was silently reported as a
-        # PASS. This mirrors bug #9's fix for the Impact Agent: an
-        # unparseable or incomplete result must default to FAIL, and a
-        # workspace-boundary refusal must be recognized explicitly rather
-        # than relying on one narrow substring check.
         REFUSAL_MARKERS = (
             "outside the workspace",
             "outside the current workspace",
@@ -680,11 +609,6 @@ def run_orchestrator(
             elif "error ts" in lowered:
                 verify_status = "fail"
             else:
-                # No explicit verify_status JSON AND no recognizable
-                # failure/refusal text either: still FAIL. Never assume a
-                # build passed just because a specific error string wasn't
-                # spotted -- absence of evidence of failure is not evidence
-                # of a pass.
                 verify_status = "fail"
                 verify_log = (
                     "Verify Agent did not return a parseable "
@@ -708,6 +632,13 @@ def run_orchestrator(
 
     if not patch_applied:
         patch_description = f"Failed to produce a passing patch across {file_count} files after {MAX_RETRIES} attempts."
+
+    # Clean up TMP_PROMPT_DIR if empty so git status stays clean
+    if TMP_PROMPT_DIR.exists():
+        try:
+            TMP_PROMPT_DIR.rmdir()
+        except OSError:
+            pass
 
     # 4. Write final impact_report.json in the locked schema
     final_report = {
