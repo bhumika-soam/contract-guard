@@ -1,0 +1,5 @@
+   {
+     "redirects": [
+       { "source": "/", "destination": "/impact-report", "permanent": false }
+     ]
+   }
