@@ -356,8 +356,45 @@ def run_parallel_impact_agents(
     return affected_files, summary_plain_english, impact_output
 
 
-def enforce_file_allowlist(affected_files: list[str]) -> list[str]:
-    """Reverts any file the Repair Agent touched that wasn't in affected_files.
+def get_git_dirty_paths() -> set[str]:
+    """Returns the set of paths `git status --porcelain` currently reports as
+    changed, normalized to forward-slash paths relative to REPO_ROOT.
+
+    Used by Fix D (see enforce_file_allowlist) to snapshot "already dirty
+    before this run started" state, so the allowlist guardrail can tell that
+    apart from "the Repair Agent just changed this." Without this, on a
+    working tree that already has uncommitted changes (e.g. your own
+    in-progress fixes to orchestrator.py, .gitignore, .bobignore) sitting
+    there when the pipeline starts, `enforce_file_allowlist` had no way to
+    know those predated the run -- it reverted them as "out-of-scope Repair
+    Agent edits," which is exactly what happened on 2026-09-27: the fixed
+    orchestrator.py, .gitignore and .bobignore were all silently
+    `git checkout --`'d back to their last-committed (pre-fix) state.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"⚠️ Could not run 'git status' to snapshot baseline dirty state: {exc}")
+        return set()
+
+    paths: set[str] = set()
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        path_part = line[3:].strip().strip('"')
+        if "->" in path_part:
+            path_part = path_part.split("->")[-1].strip().strip('"')
+        paths.add(path_part.replace("\\", "/"))
+    return paths
+
+
+def enforce_file_allowlist(affected_files: list[str], baseline_dirty: set[str]) -> list[str]:
+    """Reverts any file the Repair Agent touched that wasn't in affected_files
+    AND wasn't already dirty before this run started (Fix D -- see
+    get_git_dirty_paths above for why the baseline_dirty exclusion exists).
 
     NEW GUARDRAIL. Zero Bobcoin cost — pure git/python, runs after Repair
     Agent and before Verify Agent. If the agent edited anything outside the
@@ -416,6 +453,7 @@ def enforce_file_allowlist(affected_files: list[str]) -> list[str]:
         if path not in allowed
         and path not in orchestrator_owned
         and not path.startswith(TMP_PROMPT_REL_PREFIX)
+        and path not in baseline_dirty
     ]
 
     for status_code, path in changed:
@@ -510,6 +548,20 @@ def run_orchestrator(
     print(f"\n📄 Using diff report: change_type={diff_data.get('change_type')} "
           f"endpoint={diff_data.get('endpoint')} method={diff_data.get('method')}")
 
+    # Fix D: snapshot what's already dirty BEFORE touching anything, so the
+    # allowlist guardrail later can tell "pre-existing uncommitted work" apart
+    # from "the Repair Agent just changed this."
+    baseline_dirty = get_git_dirty_paths()
+    if baseline_dirty:
+        print(
+            f"\n⚠️ Working tree was not clean before this run started "
+            f"({len(baseline_dirty)} pre-existing changed path(s)). These will "
+            f"NOT be reverted as scope violations, but commit or stash them "
+            f"between runs so nothing gets lost track of:"
+        )
+        for p in sorted(baseline_dirty):
+            print(f"   - {p}")
+
     # 1. Run Parallel Impact Subagents (Ask mode)
     affected_files, summary_plain_english, impact_output = run_parallel_impact_agents(
         diff_data, old_field, new_field
@@ -567,7 +619,7 @@ def run_orchestrator(
 
         # --- NEW: allowlist guardrail, runs BEFORE Verify so a scope violation
         # never burns a Verify call on a doomed attempt. ---
-        violations = enforce_file_allowlist(affected_files)
+        violations = enforce_file_allowlist(affected_files, baseline_dirty)
         if violations:
             print(f"\n⚠️ Repair Agent attempt {attempt} touched {len(violations)} out-of-scope "
                   f"file(s), reverted: {violations}")
